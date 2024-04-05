@@ -1,0 +1,14 @@
+[package]
+name = "embedded_mogeefont"
+version = "0.1.0"
+authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
+edition = "2018"
+
+[dependencies]
+# Add your dependencies here
+
+[package.metadata]
+# Add any custom metadata here
+
+[workspace]
+members = ["specimen"]
