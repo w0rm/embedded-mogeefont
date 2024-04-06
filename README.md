@@ -1,5 +1,7 @@
 # embedded-mogeefont
 
+![mogeefont](assets/mogeefont.png)
+
 # Developing
 
 This code includes files from [mogeefont](https://github.com/kuzminadya/mogeefont) using a git submodule.
@@ -14,7 +16,7 @@ nix develop
 To regenerate the font files from the sources:
 
 ```
-cargo run -p generate-font -- -f ./mogeefont/font -o .
+cargo run -p generate-font
 ```
 
 # Specimen

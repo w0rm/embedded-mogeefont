@@ -7,3 +7,4 @@ edition = "2021"
 [dependencies]
 image = { version= "0.25.1", default-features = false, features = ["png"] }
 clap = { version = "4.5.4", features = ["derive"] }
+base64 = "0.13.0"
