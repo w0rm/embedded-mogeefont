@@ -2,13 +2,13 @@
 name = "embedded_mogeefont"
 version = "0.1.0"
 authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
-edition = "2018"
-
-[dependencies]
-# Add your dependencies here
+edition = "2021"
 
 [package.metadata]
 # Add any custom metadata here
 
+[dependencies]
+embedded-graphics = "0.8.1"
+
 [workspace]
-members = ["specimen"]
+members = ["specimen", "generate-font"]

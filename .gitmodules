@@ -1,0 +1,3 @@
+[submodule "mogeefont"]
+	path = mogeefont
+	url = git@github.com:kuzminadya/mogeefont.git
