@@ -204,12 +204,15 @@ impl FontData {
 
         let mut file = fs::File::create(rust_file)?;
         writeln!(file, "use embedded_graphics::image::ImageRaw;")?;
-        writeln!(file, "use embedded_graphics::pixelcolor::BinaryColor;\n")?;
-
-        writeln!(file, "pub const IMAGE: ImageRaw<'static, BinaryColor> =")?;
         writeln!(
             file,
-            r#"    ImageRaw::new(include_bytes!("{}"), {});"#,
+            "use embedded_graphics::mono_font::mapping::StrGlyphMapping;"
+        )?;
+        writeln!(file, "use embedded_graphics::pixelcolor::BinaryColor;\n")?;
+
+        writeln!(
+            file,
+            r#"pub const IMAGE: ImageRaw<'_, BinaryColor> = ImageRaw::new(include_bytes!("{}"), {});"#,
             relative_path.to_str().unwrap(),
             ATLAS_WIDTH
         )?;
@@ -230,23 +233,42 @@ impl FontData {
             }
         }
         writeln!(file, "\n];")?;
+
         writeln!(
             file,
-            "pub const MOGEEFONT_GLYPH_CODE_POINTS: [u16; {}] = [",
-            self.glyph_code_points.len()
+            "pub const MOGEEFONT_GLYPH_MAPPING: StrGlyphMapping<'_> = StrGlyphMapping::new(",
         )?;
-        for (i, code_point) in self.glyph_code_points.iter().enumerate() {
-            if i % 12 == 0 {
-                write!(file, "    ")?;
+        write!(file, "    \"")?;
+        // group codepoints in ranges of subsequent codepoints
+        let mut start = self.glyph_code_points[0];
+        let mut last = self.glyph_code_points[0];
+        let mut substitute_index = 0;
+        for (i, &code_point) in self.glyph_code_points.iter().skip(1).enumerate() {
+            // if the code point is '?' then we remember the index
+            if code_point == '?' as u16 {
+                substitute_index = i + 1;
             }
-            write!(file, "{:#06x},", code_point)?;
-            if i % 12 == 11 {
-                writeln!(file)?;
-            } else if i < self.glyph_code_points.len() - 1 {
-                write!(file, " ")?;
+            if code_point == last + 1 {
+                last = code_point;
+            } else {
+                if start == last {
+                    write!(file, "\\u{{{:x}}}", start)?;
+                } else {
+                    write!(file, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last)?;
+                }
+                start = code_point;
+                last = code_point;
             }
         }
-        writeln!(file, "\n];")?;
+        if start == last {
+            write!(file, "\\u{{{:x}}}", start)?;
+        } else {
+            write!(file, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last)?;
+        }
+        writeln!(file, "\",")?;
+        writeln!(file, "    {}", substitute_index)?;
+        writeln!(file, ");")?;
+
         writeln!(
             file,
             "pub const MOGEEFONT_LIGATURE_CODE_POINTS: [&[u16]; {}] = [",
