@@ -3,8 +3,8 @@ use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder, ImageResult};
 use std::convert::TryFrom;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
-use std::process;
 
 const ATLAS_WIDTH: usize = 128;
 const GLYPH_HEIGHT: usize = 11;
@@ -14,26 +14,33 @@ const GLYPH_HEIGHT: usize = 11;
 struct GenerateFont {
     /// Path to the font files
     /// Default: "mogeefont/font"
-    #[clap(short, long, default_value = "mogeefont/font")]
+    #[clap(long, default_value = "mogeefont/font")]
     font_dir: String,
 
     /// Path to the output png file
     /// Default: "assets/mogeefont.png"
-    #[clap(short, long, default_value = "assets/mogeefont.png")]
+    #[clap(long, default_value = "assets/mogeefont.png")]
     png_file: String,
 
     /// Path to the output raw file
     /// Default: "src/mogeefont.raw"
-    #[clap(short, long, default_value = "src/mogeefont.raw")]
+    #[clap(long, default_value = "src/mogeefont.raw")]
     raw_file: String,
+
+    /// Path to the output rust file
+    /// Default: "src/mogeefont.rs"
+    #[clap(long, default_value = "src/mogeefont.rs")]
+    rust_file: String,
 }
 
 fn main() {
     let args = GenerateFont::parse();
     let font_data = FontData::try_from(InputWrapper(args.font_dir)).unwrap();
-    font_data.save_png(args.png_file, 2).unwrap();
-    font_data.save_raw(args.raw_file).unwrap();
-    println!("{:?}", font_data.png_data(2))
+    font_data.save_png(&args.png_file, 2).unwrap();
+    font_data.save_raw(&args.raw_file).unwrap();
+    font_data
+        .save_rust(&args.rust_file, &args.raw_file)
+        .unwrap();
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -181,12 +188,83 @@ impl FontData {
         )
     }
 
-    pub fn save_png<P: AsRef<Path>>(&self, png_file: P, scale: u32) -> ImageResult<()> {
+    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> ImageResult<()> {
         self.scaled_image(scale).save(png_file)
     }
 
-    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: P) -> std::io::Result<()> {
+    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
         fs::write(raw_file, &self.bitmap_data)
+    }
+
+    pub fn save_rust<P: AsRef<Path>>(&self, rust_file: &P, raw_file: &P) -> std::io::Result<()> {
+        let relative_path = raw_file
+            .as_ref()
+            .strip_prefix(rust_file.as_ref().parent().unwrap())
+            .unwrap();
+
+        let mut file = fs::File::create(rust_file)?;
+        writeln!(file, "use embedded_graphics::image::ImageRaw;")?;
+        writeln!(file, "use embedded_graphics::pixelcolor::BinaryColor;\n")?;
+
+        writeln!(file, "pub const IMAGE: ImageRaw<'static, BinaryColor> =")?;
+        writeln!(
+            file,
+            r#"    ImageRaw::new(include_bytes!("{}"), {});"#,
+            relative_path.to_str().unwrap(),
+            ATLAS_WIDTH
+        )?;
+        writeln!(
+            file,
+            "pub const MOGEEFONT_GLYPH_DATA: [u8; {}] = [",
+            self.glyph_data.len()
+        )?;
+        for (i, byte) in self.glyph_data.iter().enumerate() {
+            if i % 16 == 0 {
+                write!(file, "    ")?;
+            }
+            write!(file, "{:#04x},", byte)?;
+            if i % 16 == 15 {
+                writeln!(file)?;
+            } else if i < self.glyph_data.len() - 1 {
+                write!(file, " ")?;
+            }
+        }
+        writeln!(file, "\n];")?;
+        writeln!(
+            file,
+            "pub const MOGEEFONT_GLYPH_CODE_POINTS: [u16; {}] = [",
+            self.glyph_code_points.len()
+        )?;
+        for (i, code_point) in self.glyph_code_points.iter().enumerate() {
+            if i % 12 == 0 {
+                write!(file, "    ")?;
+            }
+            write!(file, "{:#06x},", code_point)?;
+            if i % 12 == 11 {
+                writeln!(file)?;
+            } else if i < self.glyph_code_points.len() - 1 {
+                write!(file, " ")?;
+            }
+        }
+        writeln!(file, "\n];")?;
+        writeln!(
+            file,
+            "pub const MOGEEFONT_LIGATURE_CODE_POINTS: [&[u16]; {}] = [",
+            self.ligature_code_points.len()
+        )?;
+        for code_points in self.ligature_code_points.iter() {
+            write!(file, "    &[")?;
+            for (i, code_point) in code_points.iter().enumerate() {
+                if i < code_points.len() - 1 {
+                    write!(file, "{:#06x}, ", code_point)?;
+                } else if i == code_points.len() - 1 {
+                    write!(file, "{:#06x}", code_point)?;
+                }
+            }
+            writeln!(file, "],")?;
+        }
+        writeln!(file, "];")?;
+        Ok(())
     }
 }
 
