@@ -8,7 +8,11 @@ use std::io::Write as IOWrite;
 use std::path::Path;
 
 const ATLAS_WIDTH: usize = 128;
+
+// TODO: import from Elm
 const GLYPH_HEIGHT: usize = 11;
+const SPACE_WIDTH: usize = 3;
+const TRACKING: usize = 1;
 
 // Clapp application parameters
 #[derive(Parser)]
@@ -293,12 +297,11 @@ pub const MOGEEFONT: Font<'_> = Font {{
     ),
     glyph_data: include_bytes!("{relative_glyphs_path}"),
     ligature_code_points: "{ligature_code_points}",
-    character_height: 11,
+    character_height: {GLYPH_HEIGHT},
     baseline: 8,
-    character_spacing: 1,
+    character_spacing: {TRACKING},
 }};"#,
-        )?;
-        Ok(())
+        )
     }
 }
 
@@ -348,6 +351,16 @@ where
 
             all_glyphs.push((code_point, img));
         }
+
+        // Add a space glyph
+        all_glyphs.push((
+            CodePoint::Single(' ' as u16),
+            image::GrayImage::from_pixel(
+                SPACE_WIDTH as u32,
+                GLYPH_HEIGHT as u32,
+                image::Luma::from([255]),
+            ),
+        ));
 
         // First glyphs, then ligatures
         all_glyphs.sort_by(|a, b| a.0.cmp(&b.0));

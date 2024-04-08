@@ -29,7 +29,7 @@ pub fn main_js() -> Result<(), JsValue> {
         .expect("could not clear display");
 
     Text::with_baseline(
-        "Hello,Rust!\nMogeefont!",
+        "Hello, Rust!\nMogeeFont!",
         Point::new(12, 16),
         style,
         Baseline::Top,
