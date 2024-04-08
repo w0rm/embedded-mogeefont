@@ -1,3 +1,4 @@
+use crate::font::GlyphIndex;
 use crate::Font;
 use crate::{draw_target::MogeeFontDrawTarget, generated::MOGEEFONT};
 use az::SaturatingAs;
@@ -38,7 +39,7 @@ impl<'a, C> TextStyle<'a, C> {
     where
         'a: 't,
     {
-        let mut chars = text.chars();
+        let mut chars = self.font.char_offsets(text);
         let mut next_char = chars.next();
         let mut add_spacing = false;
 
@@ -168,7 +169,7 @@ where
 }
 
 enum LineElement {
-    Char(char),
+    Char(GlyphIndex),
     Spacing,
     Done,
 }

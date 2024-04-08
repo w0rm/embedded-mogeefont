@@ -278,6 +278,8 @@ impl FontData {
 
         let (glyph_mapping, substitute_index) = self.glyph_mapping();
         let ligature_code_points = self.ligature_code_points();
+        let ligature_offset = self.glyph_code_points.len();
+
         let png_data = self.png_data(2);
 
         let mut file = fs::File::create(rust_file)?;
@@ -285,6 +287,7 @@ impl FontData {
         writeln!(
             file,
             r#"use crate::font::Font;
+use crate::ligature_substitution::StrLigatureSubstitution;
 use embedded_graphics::image::ImageRaw;
 use embedded_graphics::mono_font::mapping::StrGlyphMapping;
 
@@ -296,7 +299,10 @@ pub const MOGEEFONT: Font<'_> = Font {{
         {substitute_index},
     ),
     glyph_data: include_bytes!("{relative_glyphs_path}"),
-    ligature_code_points: "{ligature_code_points}",
+    ligature_substitution: StrLigatureSubstitution::new(
+        "{ligature_code_points}",
+        {ligature_offset},
+    ),
     character_height: {GLYPH_HEIGHT},
     baseline: 8,
     character_spacing: {TRACKING},

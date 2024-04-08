@@ -1,4 +1,5 @@
 use crate::font::Font;
+use crate::ligature_substitution::StrLigatureSubstitution;
 use embedded_graphics::image::ImageRaw;
 use embedded_graphics::mono_font::mapping::StrGlyphMapping;
 
@@ -10,7 +11,10 @@ pub const MOGEEFONT: Font<'_> = Font {
         31,
     ),
     glyph_data: include_bytes!("glyph_data.raw"),
-    ligature_code_points: "\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}",
+    ligature_substitution: StrLigatureSubstitution::new(
+        "\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}",
+        160,
+    ),
     character_height: 11,
     baseline: 8,
     character_spacing: 1,
