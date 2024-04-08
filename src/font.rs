@@ -11,6 +11,9 @@ pub struct Font<'a> {
     pub(crate) glyph_mapping: StrGlyphMapping<'a>,
     pub(crate) glyph_data: &'a [u8],
     pub(crate) ligature_code_points: &'a str,
+    pub(crate) character_height: u32,
+    pub(crate) baseline: u32,
+    pub(crate) character_spacing: i32,
 }
 
 impl<'a> Font<'a> {
@@ -27,6 +30,12 @@ impl<'a> Font<'a> {
         } else {
             None
         }
+    }
+
+    /// Returns the area of a glyph in the font image.
+    pub fn glyph_width(&self, glyph: char) -> i32 {
+        let index = self.glyph_mapping.index(glyph);
+        self.glyph_data[index * 4 + 2].into()
     }
 
     /// Returns a subimage for a glyph.

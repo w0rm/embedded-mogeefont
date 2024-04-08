@@ -11,4 +11,7 @@ pub const MOGEEFONT: Font<'_> = Font {
     ),
     glyph_data: include_bytes!("glyph_data.raw"),
     ligature_code_points: "\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}",
+    character_height: 11,
+    baseline: 8,
+    character_spacing: 1,
 };

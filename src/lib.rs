@@ -1,3 +1,4 @@
+mod draw_target;
 mod font;
 mod generated;
 mod text_style;
