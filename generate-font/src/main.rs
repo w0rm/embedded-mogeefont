@@ -2,8 +2,9 @@ use clap::Parser;
 use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder, ImageResult};
 use std::convert::TryFrom;
+use std::fmt::Write;
 use std::fs;
-use std::io::Write;
+use std::io::Write as IOWrite;
 use std::path::Path;
 
 const ATLAS_WIDTH: usize = 128;
@@ -27,9 +28,14 @@ struct GenerateFont {
     #[clap(long, default_value = "src/mogeefont.raw")]
     raw_file: String,
 
+    /// Path to the output raw file
+    /// Default: "src/glyph_data.raw"
+    #[clap(long, default_value = "src/glyph_data.raw")]
+    raw_glyph_data: String,
+
     /// Path to the output rust file
-    /// Default: "src/mogeefont.rs"
-    #[clap(long, default_value = "src/mogeefont.rs")]
+    /// Default: "src/generated.rs"
+    #[clap(long, default_value = "src/generated.rs")]
     rust_file: String,
 }
 
@@ -38,8 +44,10 @@ fn main() {
     let font_data = FontData::try_from(InputWrapper(args.font_dir)).unwrap();
     font_data.save_png(&args.png_file, 2).unwrap();
     font_data.save_raw(&args.raw_file).unwrap();
+    font_data.save_raw_glyph_data(&args.raw_glyph_data).unwrap();
+
     font_data
-        .save_rust(&args.rust_file, &args.raw_file)
+        .save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)
         .unwrap();
 }
 
@@ -188,57 +196,10 @@ impl FontData {
         )
     }
 
-    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> ImageResult<()> {
-        self.scaled_image(scale).save(png_file)
-    }
-
-    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
-        fs::write(raw_file, &self.bitmap_data)
-    }
-
-    pub fn save_rust<P: AsRef<Path>>(&self, rust_file: &P, raw_file: &P) -> std::io::Result<()> {
-        let relative_path = raw_file
-            .as_ref()
-            .strip_prefix(rust_file.as_ref().parent().unwrap())
-            .unwrap();
-
-        let mut file = fs::File::create(rust_file)?;
-        writeln!(file, "use embedded_graphics::image::ImageRaw;")?;
-        writeln!(
-            file,
-            "use embedded_graphics::mono_font::mapping::StrGlyphMapping;"
-        )?;
-        writeln!(file, "use embedded_graphics::pixelcolor::BinaryColor;\n")?;
-
-        writeln!(
-            file,
-            r#"pub const IMAGE: ImageRaw<'_, BinaryColor> = ImageRaw::new(include_bytes!("{}"), {});"#,
-            relative_path.to_str().unwrap(),
-            ATLAS_WIDTH
-        )?;
-        writeln!(
-            file,
-            "pub const MOGEEFONT_GLYPH_DATA: [u8; {}] = [",
-            self.glyph_data.len()
-        )?;
-        for (i, byte) in self.glyph_data.iter().enumerate() {
-            if i % 16 == 0 {
-                write!(file, "    ")?;
-            }
-            write!(file, "{:#04x},", byte)?;
-            if i % 16 == 15 {
-                writeln!(file)?;
-            } else if i < self.glyph_data.len() - 1 {
-                write!(file, " ")?;
-            }
-        }
-        writeln!(file, "\n];")?;
-
-        writeln!(
-            file,
-            "pub const MOGEEFONT_GLYPH_MAPPING: StrGlyphMapping<'_> = StrGlyphMapping::new(",
-        )?;
-        write!(file, "    \"")?;
+    /// Generate a string representation of the glyph mapping
+    /// and the substitute character index
+    fn glyph_mapping(&self) -> (String, usize) {
+        let mut st = String::new();
         // group codepoints in ranges of subsequent codepoints
         let mut start = self.glyph_code_points[0];
         let mut last = self.glyph_code_points[0];
@@ -252,40 +213,88 @@ impl FontData {
                 last = code_point;
             } else {
                 if start == last {
-                    write!(file, "\\u{{{:x}}}", start)?;
+                    write!(st, "\\u{{{:x}}}", start).unwrap();
                 } else {
-                    write!(file, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last)?;
+                    write!(st, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last).unwrap();
                 }
                 start = code_point;
                 last = code_point;
             }
         }
         if start == last {
-            write!(file, "\\u{{{:x}}}", start)?;
+            write!(st, "\\u{{{:x}}}", start).unwrap();
         } else {
-            write!(file, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last)?;
+            write!(st, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last).unwrap();
         }
-        writeln!(file, "\",")?;
-        writeln!(file, "    {}", substitute_index)?;
-        writeln!(file, ");")?;
+        (st, substitute_index)
+    }
+
+    fn ligature_code_points(&self) -> String {
+        let mut st = String::new();
+        for code_points in self.ligature_code_points.iter() {
+            write!(st, "\\0").unwrap();
+            for code_point in code_points {
+                write!(st, "\\u{{{:x}}}", code_point).unwrap();
+            }
+        }
+        st
+    }
+
+    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> ImageResult<()> {
+        self.scaled_image(scale).save(png_file)
+    }
+
+    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
+        fs::write(raw_file, &self.bitmap_data)
+    }
+
+    pub fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
+        fs::write(raw_file, &self.glyph_data)
+    }
+
+    pub fn save_rust<P: AsRef<Path>>(
+        &self,
+        rust_file: &P,
+        raw_file: &P,
+        raw_glyphs_file: &P,
+    ) -> std::io::Result<()> {
+        let relative_raw_path = raw_file
+            .as_ref()
+            .strip_prefix(rust_file.as_ref().parent().unwrap())
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        let relative_glyphs_path = raw_glyphs_file
+            .as_ref()
+            .strip_prefix(rust_file.as_ref().parent().unwrap())
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        let (glyph_mapping, substitute_index) = self.glyph_mapping();
+        let ligature_code_points = self.ligature_code_points();
+        let png_data = self.png_data(2);
+
+        let mut file = fs::File::create(rust_file)?;
 
         writeln!(
             file,
-            "pub const MOGEEFONT_LIGATURE_CODE_POINTS: [&[u16]; {}] = [",
-            self.ligature_code_points.len()
+            r#"use crate::font::Font;
+use embedded_graphics::image::ImageRaw;
+use embedded_graphics::mono_font::mapping::StrGlyphMapping;
+
+/// ![mogeefont]({png_data})
+pub const MOGEEFONT: Font<'_> = Font {{
+    image: ImageRaw::new(include_bytes!("{relative_raw_path}"), 128),
+    glyph_mapping: StrGlyphMapping::new(
+        "{glyph_mapping}",
+        {substitute_index},
+    ),
+    glyph_data: include_bytes!("{relative_glyphs_path}"),
+    ligature_code_points: "{ligature_code_points}",
+}};"#,
         )?;
-        for code_points in self.ligature_code_points.iter() {
-            write!(file, "    &[")?;
-            for (i, code_point) in code_points.iter().enumerate() {
-                if i < code_points.len() - 1 {
-                    write!(file, "{:#06x}, ", code_point)?;
-                } else if i == code_points.len() - 1 {
-                    write!(file, "{:#06x}", code_point)?;
-                }
-            }
-            writeln!(file, "],")?;
-        }
-        writeln!(file, "];")?;
         Ok(())
     }
 }
