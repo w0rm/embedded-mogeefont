@@ -28,18 +28,27 @@ impl<'a> Font<'a> {
     {
         // Iterate over the characters in the text and return the glyph index for each character
         // the ligatures are handled by the ligature substitution.
-        let mut chars = text.as_bytes();
+        let mut byte_offset = 0;
+        let mut chars = text.chars();
         core::iter::from_fn(move || {
-            if chars.is_empty() {
-                return None;
-            }
-            if let Some((liga_index, offset)) = self.ligature_substitution.substitute(chars) {
-                chars = offset;
+            if let Some((liga_index, mut liga_size)) =
+                self.ligature_substitution.substitute(&text[byte_offset..])
+            {
+                // Advance by the number of characters in the ligature
+                while liga_size > 0 {
+                    if let Some(glyph) = chars.next() {
+                        byte_offset += glyph.len_utf8();
+                    } else {
+                        return None;
+                    }
+                    liga_size -= 1;
+                }
                 return Some(GlyphIndex(liga_index));
+            } else if let Some(glyph) = chars.next() {
+                byte_offset += glyph.len_utf8();
+                return Some(self.glyph_index(glyph));
             } else {
-                let (glyph, rest) = chars.split_first()?;
-                chars = rest;
-                return Some(self.glyph_index(*glyph as char));
+                return None;
             }
         })
     }
@@ -110,7 +119,7 @@ mod tests {
         );
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('!')),
-            Some(Rectangle::new(Point::zero(), Size::new(1, 11)))
+            Some(Rectangle::new(Point::new(4, 0), Size::new(1, 11)))
         );
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('ё')),
@@ -124,13 +133,14 @@ mod tests {
 
     #[test]
     fn test_ligature_substitution_in_text() {
-        let text = "ffifijjjssyj";
+        let text = "虫ffifijjjssyj";
         let ligatures_offset = 160;
         let mut chars = MOGEEFONT.char_offsets(text);
+        assert_eq!(chars.next(), Some(MOGEEFONT.glyph_index('虫')));
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 0))); // ffi
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 2))); // fi
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 5))); // jj
-        assert_eq!(chars.next(), Some(GlyphIndex(73))); // j
+        assert_eq!(chars.next(), Some(MOGEEFONT.glyph_index('j')));
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 6))); // ss
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 7))); // yj
         assert_eq!(chars.next(), None);

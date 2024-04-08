@@ -9,35 +9,17 @@ impl<'a> StrLigatureSubstitution<'a> {
         Self { data, offset }
     }
 
-    /// Return an iterator over ligatures
-    /// The ligatures are separated by a null byte
-    fn ligatures(&self) -> impl Iterator<Item = &[u8]> {
-        let chars = self.data.as_bytes();
-        let mut start = 0;
-        let mut end = 0;
-        core::iter::from_fn(move || {
-            while start < chars.len() {
-                while end < chars.len() && chars[end] != 0 {
-                    end += 1;
-                }
-                let ligature = &chars[start..end];
-                start = end + 1;
-                end = start;
-                if !ligature.is_empty() {
-                    return Some(ligature);
-                }
-            }
-            None
-        })
-    }
-
-    /// Return the index of the ligature glyph and the remaining string
+    /// Return the index of the ligature glyph
+    /// and the number of chars to skip
     /// if the string starts with a ligature.
-    pub fn substitute(&self, str: &'a [u8]) -> Option<(usize, &'a [u8])> {
+    pub fn substitute(&self, str: &str) -> Option<(usize, usize)> {
         let mut offset = self.offset;
-        for chunk in self.ligatures() {
-            if str.starts_with(chunk) {
-                return Some((offset, &str[chunk.len()..]));
+        for liga in self.data.split('\0') {
+            if liga.is_empty() {
+                continue;
+            }
+            if str.starts_with(liga) {
+                return Some((offset, liga.len()));
             }
             offset += 1;
         }
@@ -53,22 +35,10 @@ mod tests {
     fn test_substitute() {
         let offset = 31;
         let mapping = StrLigatureSubstitution::new("\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}", offset);
-        assert_eq!(mapping.substitute(&['f' as u8]), None);
-        assert_eq!(
-            mapping.substitute("ffi".as_bytes()),
-            Some((offset + 0, "".as_bytes()))
-        );
-        assert_eq!(
-            mapping.substitute("ff".as_bytes()),
-            Some((offset + 1, "".as_bytes()))
-        );
-        assert_eq!(
-            mapping.substitute("fi".as_bytes()),
-            Some((offset + 2, "".as_bytes()))
-        );
-        assert_eq!(
-            mapping.substitute("yj".as_bytes()),
-            Some((offset + 7, "".as_bytes()))
-        );
+        assert_eq!(mapping.substitute("f"), None);
+        assert_eq!(mapping.substitute("ffi"), Some((offset + 0, 3)));
+        assert_eq!(mapping.substitute("ff"), Some((offset + 1, 2)));
+        assert_eq!(mapping.substitute("fi"), Some((offset + 2, 2)));
+        assert_eq!(mapping.substitute("yj"), Some((offset + 7, 2)));
     }
 }
