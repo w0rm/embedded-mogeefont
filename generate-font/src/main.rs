@@ -7,12 +7,10 @@ use std::fs;
 use std::io::Write as IOWrite;
 use std::path::Path;
 
-const ATLAS_WIDTH: usize = 128;
+mod elm_file_data;
+use elm_file_data::ElmFileData;
 
-// TODO: import from Elm
-const GLYPH_HEIGHT: usize = 11;
-const SPACE_WIDTH: usize = 3;
-const TRACKING: usize = 1;
+const ATLAS_WIDTH: usize = 128;
 
 // Clapp application parameters
 #[derive(Parser)]
@@ -21,6 +19,10 @@ struct GenerateFont {
     /// Default: "mogeefont/font"
     #[clap(long, default_value = "mogeefont/font")]
     font_dir: String,
+
+    /// Path to the Elm module
+    #[clap(long, default_value = "mogeefont/src/MogeeFont.elm")]
+    elm_file: String,
 
     /// Path to the output png file
     /// Default: "assets/mogeefont.png"
@@ -45,7 +47,7 @@ struct GenerateFont {
 
 fn main() {
     let args = GenerateFont::parse();
-    let font_data = FontData::try_from(InputWrapper(args.font_dir)).unwrap();
+    let font_data = FontData::try_from((args.font_dir, args.elm_file)).unwrap();
     font_data.save_png(&args.png_file, 2).unwrap();
     font_data.save_raw(&args.raw_file).unwrap();
     font_data.save_raw_glyph_data(&args.raw_glyph_data).unwrap();
@@ -102,10 +104,11 @@ struct FontData {
     ligature_code_points: Vec<Vec<u16>>,
     glyph_data: Vec<u8>, // left, top, width, height for each glyph then ligature
     height: usize,
+    em_height: u32,
 }
 
 impl FontData {
-    fn new(glyphs_data: Vec<Glyph>, height: usize) -> Self {
+    fn new(glyphs_data: Vec<Glyph>, height: usize, elm_file_data: ElmFileData) -> Self {
         let mut bitmap = vec![false; ATLAS_WIDTH * height];
 
         let mut glyph_code_points = Vec::new();
@@ -157,6 +160,7 @@ impl FontData {
             glyph_code_points,
             ligature_code_points,
             height,
+            em_height: elm_file_data.em_height,
         }
     }
 
@@ -284,6 +288,8 @@ impl FontData {
 
         let mut file = fs::File::create(rust_file)?;
 
+        let character_height = self.em_height;
+
         writeln!(
             file,
             r#"use crate::font::Font;
@@ -303,25 +309,24 @@ pub const MOGEEFONT: Font<'_> = Font {{
         "{ligature_code_points}",
         {ligature_offset},
     ),
-    character_height: {GLYPH_HEIGHT},
+    character_height: {character_height},
     baseline: 8,
-    character_spacing: {TRACKING},
+    character_spacing: 1,
 }};"#,
         )
     }
 }
 
-pub struct InputWrapper<T>(T);
-
-impl<P> TryFrom<InputWrapper<P>> for FontData
+impl<P> TryFrom<(P, P)> for FontData
 where
     P: AsRef<Path>,
 {
     type Error = std::io::Error;
 
-    fn try_from(font_dir: InputWrapper<P>) -> std::io::Result<Self> {
+    fn try_from(paths: (P, P)) -> std::io::Result<Self> {
         // Read the png images from the font directory
-        let font_dir = fs::read_dir(font_dir.0)?;
+        let font_dir = fs::read_dir(paths.0)?;
+        let elm_file_data = ElmFileData::from(paths.1);
 
         let mut all_glyphs: Vec<(CodePoint, image::GrayImage)> = Vec::new();
 
@@ -362,8 +367,8 @@ where
         all_glyphs.push((
             CodePoint::Single(' ' as u16),
             image::GrayImage::from_pixel(
-                SPACE_WIDTH as u32,
-                GLYPH_HEIGHT as u32,
+                elm_file_data.space_width,
+                elm_file_data.em_height,
                 image::Luma::from([255]),
             ),
         ));
@@ -379,7 +384,7 @@ where
             let width = usize::try_from(img.width()).unwrap();
             if left + width > ATLAS_WIDTH {
                 left = 0;
-                top += GLYPH_HEIGHT + 1;
+                top += elm_file_data.em_height as usize + 1;
             }
             glyphs_data.push(Glyph {
                 left,
@@ -390,6 +395,10 @@ where
             left += width + 1;
         }
 
-        Ok(FontData::new(glyphs_data, top + GLYPH_HEIGHT))
+        Ok(FontData::new(
+            glyphs_data,
+            top + elm_file_data.em_height as usize,
+            elm_file_data,
+        ))
     }
 }

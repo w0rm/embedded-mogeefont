@@ -7,4 +7,7 @@ edition = "2021"
 [dependencies]
 image = { version= "0.25.1", default-features = false, features = ["png"] }
 clap = { version = "4.5.4", features = ["derive"] }
+tree-sitter-elm = "5.7.0"
+tree-sitter = "0.20.10"
+unescape = "0.1.0"
 base64 = "0.13.0"
