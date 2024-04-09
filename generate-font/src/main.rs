@@ -1,11 +1,7 @@
 use clap::Parser;
 use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder, ImageResult};
-use std::convert::TryFrom;
-use std::fmt::Write;
-use std::fs;
-use std::io::Write as IOWrite;
-use std::path::Path;
+use std::{collections::BTreeMap, convert::TryFrom, fmt::Write, io::Write as IOWrite, path::Path};
 
 mod elm_file_data;
 use elm_file_data::ElmFileData;
@@ -59,8 +55,8 @@ fn main() {
 
 #[derive(Debug, PartialEq, Eq)]
 enum CodePoint {
-    Single(u16),
-    Ligature(Vec<u16>),
+    Single(String),
+    Ligature(String),
 }
 
 impl Ord for CodePoint {
@@ -100,8 +96,8 @@ struct Glyph {
 
 struct FontData {
     bitmap_data: Vec<u8>,
-    glyph_code_points: Vec<u16>,
-    ligature_code_points: Vec<Vec<u16>>,
+    glyph_code_points: Vec<u32>,
+    ligature_code_points: Vec<Vec<u32>>,
     glyph_data: Vec<u8>, // left, top, width, height for each glyph then ligature
     height: usize,
     em_height: u32,
@@ -115,7 +111,10 @@ impl FontData {
         let mut ligature_code_points = Vec::new();
         let mut glyph_data = Vec::new();
 
-        for glyph in glyphs_data {
+        // mapping from glyph code points to glyph index
+        let mut glyph_offsets: BTreeMap<&str, usize> = BTreeMap::new();
+
+        for (glyph_offset, glyph) in glyphs_data.iter().enumerate() {
             let glyph_width = usize::try_from(glyph.img.width()).unwrap();
             let glyph_height = usize::try_from(glyph.img.height()).unwrap();
             for y in 0..glyph_height {
@@ -133,12 +132,14 @@ impl FontData {
                 glyph_height as u8,
             ]);
 
-            match glyph.code_point {
+            match &glyph.code_point {
                 CodePoint::Single(p) => {
-                    glyph_code_points.push(p);
+                    glyph_code_points.push(p.chars().next().unwrap() as u32);
+                    glyph_offsets.insert(&p, glyph_offset);
                 }
                 CodePoint::Ligature(p) => {
-                    ligature_code_points.push(p);
+                    ligature_code_points.push(p.chars().map(|c| c as u32).collect());
+                    glyph_offsets.insert(&p, glyph_offset);
                 }
             }
         }
@@ -214,7 +215,7 @@ impl FontData {
         let mut substitute_index = 0;
         for (i, &code_point) in self.glyph_code_points.iter().skip(1).enumerate() {
             // if the code point is '?' then we remember the index
-            if code_point == '?' as u16 {
+            if code_point == '?' as u32 {
                 substitute_index = i + 1;
             }
             if code_point == last + 1 {
@@ -253,11 +254,11 @@ impl FontData {
     }
 
     pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
-        fs::write(raw_file, &self.bitmap_data)
+        std::fs::write(raw_file, &self.bitmap_data)
     }
 
     pub fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
-        fs::write(raw_file, &self.glyph_data)
+        std::fs::write(raw_file, &self.glyph_data)
     }
 
     pub fn save_rust<P: AsRef<Path>>(
@@ -286,7 +287,7 @@ impl FontData {
 
         let png_data = self.png_data(2);
 
-        let mut file = fs::File::create(rust_file)?;
+        let mut file = std::fs::File::create(rust_file)?;
 
         let character_height = self.em_height;
 
@@ -325,7 +326,7 @@ where
 
     fn try_from(paths: (P, P)) -> std::io::Result<Self> {
         // Read the png images from the font directory
-        let font_dir = fs::read_dir(paths.0)?;
+        let font_dir = std::fs::read_dir(paths.0)?;
         let elm_file_data = ElmFileData::from(paths.1);
 
         let mut all_glyphs: Vec<(CodePoint, image::GrayImage)> = Vec::new();
@@ -345,19 +346,19 @@ where
             // for ligatures there are multiple code points, separated by "_"
             let path = entry.path();
             let img = image::open(&path).unwrap().to_luma8();
-            let code_points: Vec<u16> = path
+            let code_points: Vec<char> = path
                 .file_stem()
                 .unwrap_or_default()
                 .to_str()
                 .unwrap_or_default()
                 .split('_')
-                .map(|s| u16::from_str_radix(s, 16).unwrap())
+                .map(|s| char::from_u32(u32::from_str_radix(s, 16).unwrap()).unwrap())
                 .collect();
 
             let code_point = match code_points.len() {
-                0 => continue,
-                1 => CodePoint::Single(code_points[0]),
-                _ => CodePoint::Ligature(code_points),
+                0 => panic!("No code points found"),
+                1 => CodePoint::Single(code_points.into_iter().collect()),
+                _ => CodePoint::Ligature(code_points.into_iter().collect()),
             };
 
             all_glyphs.push((code_point, img));
@@ -365,7 +366,7 @@ where
 
         // Add a space glyph
         all_glyphs.push((
-            CodePoint::Single(' ' as u16),
+            CodePoint::Single(" ".to_string()),
             image::GrayImage::from_pixel(
                 elm_file_data.space_width,
                 elm_file_data.em_height,
