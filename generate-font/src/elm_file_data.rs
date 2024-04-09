@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 /// Parse Elm file to get the following data:
 /// - emHeight and spaceWidth (number constants)
 /// - defaultBearings (tuple)
@@ -6,7 +7,8 @@
 /// - rightKerningClass (Dict.fromList)
 /// - kerningPairs (Dict.fromList)
 /// - kerningOverrides (Dict.fromList)
-use std::path::Path;
+use std::{path::Path, str::FromStr};
+use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
 
 pub struct ElmFileData {
     pub em_height: u32,
@@ -15,7 +17,6 @@ pub struct ElmFileData {
     pub bearings: Vec<(String, i32, i32)>,
     pub left_kerning_class: Vec<(usize, Vec<String>)>,
     pub right_kerning_class: Vec<(usize, Vec<String>)>,
-
     pub kering_pairs: Vec<(usize, usize, i32)>,
     pub kerning_overrides: Vec<(String, String, i32)>,
 }
@@ -126,32 +127,36 @@ const KERNING_OVERRIDES: &str = r#"
     (#eq? @lower_case_identifier "kerningOverrides")
 )"#;
 
+/// ["a", "b", "c"]
+const STRING_LIST: &str = r#"
+(list_expr
+    exprList: (string_constant_expr (regular_string_part) @string)
+)"#;
+
 impl<P> From<P> for ElmFileData
 where
     P: AsRef<Path>,
 {
     fn from(elm_file: P) -> Self {
         let elm_code = std::fs::read(elm_file).unwrap();
-        let mut parser = tree_sitter::Parser::new();
+        let elm_code = elm_code.as_slice();
         let language = tree_sitter_elm::language();
-        parser.set_language(language).unwrap();
-        let tree = parser.parse(&elm_code, None).unwrap();
-        let mut cursor = tree_sitter::QueryCursor::new();
+        let tree = {
+            let mut parser = Parser::new();
+            parser.set_language(language).unwrap();
+            parser.parse(&elm_code, None).unwrap()
+        };
+        let root_node = tree.root_node();
+        let mut cursor = QueryCursor::new();
 
         // emHeight and spaceWidth
-        let query =
-            tree_sitter::Query::new(language, NUMBER_CONSTANT).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
+        let query = Query::new(language, NUMBER_CONSTANT).expect("Failed to create query");
+        let matches = cursor.matches(&query, root_node, elm_code);
         let mut em_height = 0;
         let mut space_width = 0;
         for m in matches {
-            let value = m.captures[1]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            match m.captures[0].node.utf8_text(&elm_code) {
+            let value = m.captures[1].parse(elm_code);
+            match m.captures[0].node.utf8_text(elm_code) {
                 Ok("emHeight") => em_height = value,
                 Ok("spaceWidth") => space_width = value,
                 _ => {}
@@ -159,79 +164,36 @@ where
         }
 
         // Default bearings
-        let query =
-            tree_sitter::Query::new(language, DEFAULT_BEARINGS).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
-        let mut left_default_bearing: i32 = 0;
-        let mut right_default_bearing: i32 = 0;
+        let query = Query::new(language, DEFAULT_BEARINGS).expect("Failed to create query");
+        let matches = cursor.matches(&query, root_node, elm_code);
         let captures = matches.into_iter().next().unwrap().captures;
-        left_default_bearing = captures[1]
-            .node
-            .utf8_text(&elm_code)
-            .unwrap()
-            .parse()
-            .unwrap();
-        right_default_bearing = captures[2]
-            .node
-            .utf8_text(&elm_code)
-            .unwrap()
-            .parse()
-            .unwrap();
+        let left_default_bearing = captures[1].parse(elm_code);
+        let right_default_bearing = captures[2].parse(elm_code);
 
         // Bearings
-        let query = tree_sitter::Query::new(language, BEARINGS).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
-        let mut bearings: Vec<(String, i32, i32)> = Vec::new();
-        for m in matches {
-            let char = m.captures[1].node.utf8_text(&elm_code).unwrap();
-            let left_bearing = m.captures[2]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            let right_bearing = m.captures[3]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            bearings.push((
-                unescape::unescape(char).unwrap().to_string(),
-                left_bearing,
-                right_bearing,
-            ));
-        }
+        let query = Query::new(language, BEARINGS).expect("Failed to create query");
+        let bearings = cursor
+            .matches(&query, root_node, elm_code)
+            .map(|m| {
+                let char = m.captures[1].to_string(elm_code);
+                let left_bearing = m.captures[2].parse(elm_code);
+                let right_bearing = m.captures[3].parse(elm_code);
+                (char, left_bearing, right_bearing)
+            })
+            .collect();
 
         // Kerning class
-        let query =
-            tree_sitter::Query::new(language, KERNING_CLASS).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
+        let query = Query::new(language, KERNING_CLASS).expect("Failed to create query");
         let mut left_kerning_class: Vec<(usize, Vec<String>)> = Vec::new();
         let mut right_kerning_class: Vec<(usize, Vec<String>)> = Vec::new();
-        for m in matches {
-            let class = m.captures[1]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            // exprList: (string_constant_expr (regular_string_part)+ @chars)
-            let chars = m.captures[2]
-                .node
-                .children_by_field_name("exprList", &mut m.captures[2].node.walk())
-                .map(|expr| {
-                    let str = expr
-                        .children(&mut expr.walk())
-                        .nth(1)
-                        .unwrap()
-                        .utf8_text(&elm_code)
-                        .unwrap();
-                    unescape::unescape(str).unwrap().to_string()
-                })
+        for m in cursor.matches(&query, root_node, elm_code) {
+            let class = m.captures[1].parse(elm_code);
+            let arr_query = Query::new(language, STRING_LIST).expect("Failed to create query");
+            let chars = QueryCursor::new()
+                .matches(&arr_query, m.captures[2].node, elm_code)
+                .map(|m| m.captures[0].to_string(elm_code))
                 .collect::<Vec<String>>();
-
-            match m.captures[0].node.utf8_text(&elm_code) {
+            match m.captures[0].node.utf8_text(elm_code) {
                 Ok("leftKerningClass") => left_kerning_class.push((class, chars)),
                 Ok("rightKerningClass") => right_kerning_class.push((class, chars)),
                 _ => {}
@@ -239,52 +201,28 @@ where
         }
 
         // Kerning pairs
-        let query =
-            tree_sitter::Query::new(language, KERNING_PAIRS).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
-        let mut kering_pairs: Vec<(usize, usize, i32)> = Vec::new();
-        for m in matches {
-            let left_class = m.captures[1]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            let right_class = m.captures[2]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            let kerning = m.captures[3]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            kering_pairs.push((left_class, right_class, kerning));
-        }
+        let query = Query::new(language, KERNING_PAIRS).expect("Failed to create query");
+        let kering_pairs = cursor
+            .matches(&query, root_node, elm_code)
+            .map(|m| {
+                let left_class = m.captures[1].parse(elm_code);
+                let right_class = m.captures[2].parse(elm_code);
+                let kerning = m.captures[3].parse(elm_code);
+                (left_class, right_class, kerning)
+            })
+            .collect();
 
         // Kerning overrides
-        let query =
-            tree_sitter::Query::new(language, KERNING_OVERRIDES).expect("Failed to create query");
-        let matches = cursor.matches(&query, tree.root_node(), elm_code.as_slice());
-        let mut kerning_overrides: Vec<(String, String, i32)> = Vec::new();
-        for m in matches {
-            let left_char = m.captures[1].node.utf8_text(&elm_code).unwrap().to_string();
-            let right_char = m.captures[2].node.utf8_text(&elm_code).unwrap().to_string();
-            let kerning = m.captures[3]
-                .node
-                .utf8_text(&elm_code)
-                .unwrap()
-                .parse()
-                .unwrap();
-            kerning_overrides.push((
-                unescape::unescape(&left_char).unwrap().to_string(),
-                unescape::unescape(&right_char).unwrap().to_string(),
-                kerning,
-            ));
-        }
+        let query = Query::new(language, KERNING_OVERRIDES).expect("Failed to create query");
+        let kerning_overrides = cursor
+            .matches(&query, root_node, elm_code)
+            .map(|m| {
+                let left_char = m.captures[1].to_string(elm_code);
+                let right_char = m.captures[2].to_string(elm_code);
+                let kerning = m.captures[3].parse(elm_code);
+                (left_char, right_char, kerning)
+            })
+            .collect();
 
         ElmFileData {
             em_height,
@@ -296,5 +234,37 @@ where
             kering_pairs,
             kerning_overrides,
         }
+    }
+}
+
+trait Reader<'a> {
+    fn to_string(&self, source: &'a [u8]) -> String;
+
+    fn parse<F: FromStr>(&self, source: &'a [u8]) -> F
+    where
+        <F as FromStr>::Err: Debug;
+}
+
+impl<'a> Reader<'a> for Node<'a> {
+    fn to_string(&self, source: &[u8]) -> String {
+        unescape::unescape(self.utf8_text(source).unwrap()).unwrap()
+    }
+    fn parse<F: FromStr>(&self, source: &[u8]) -> F
+    where
+        <F as FromStr>::Err: Debug,
+    {
+        self.to_string(source).parse().unwrap()
+    }
+}
+
+impl<'a> Reader<'a> for QueryCapture<'a> {
+    fn to_string(&self, source: &[u8]) -> String {
+        self.node.to_string(source)
+    }
+    fn parse<F: FromStr>(&self, source: &[u8]) -> F
+    where
+        <F as FromStr>::Err: Debug,
+    {
+        self.node.parse(source)
     }
 }
