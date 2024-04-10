@@ -6,6 +6,7 @@ use embedded_graphics::{
     primitives::Rectangle,
 };
 
+use crate::kerning::Kerning;
 use crate::ligature_substitution::StrLigatureSubstitution;
 use crate::side_bearings::SideBearings;
 
@@ -15,6 +16,7 @@ pub struct Font<'a> {
     pub(crate) glyph_data: &'a [u8],
     pub(crate) ligature_substitution: StrLigatureSubstitution<'a>,
     pub(crate) side_bearings: SideBearings<'a>,
+    pub(crate) kerning: Kerning<'a>,
     pub(crate) character_height: u32,
     pub(crate) baseline: u32,
 }
@@ -61,7 +63,7 @@ impl<'a> Font<'a> {
 
     /// Returns the area of a glyph in the font image.
     fn glyph_area(&self, index: GlyphIndex) -> Option<Rectangle> {
-        let start = index.0 * 3;
+        let start = index.0 * 5;
         let end = start + 3;
         if let [x, y, dimensions] = self.glyph_data[start..end] {
             let width = dimensions & 0x0F; // Lower 4 bits
@@ -75,9 +77,43 @@ impl<'a> Font<'a> {
         }
     }
 
+    pub fn letter_spacing(&self, prev_char: Option<GlyphIndex>, next_char: GlyphIndex) -> i32 {
+        match prev_char {
+            Some(prev) => {
+                let right_bearing = self.side_bearings.right(prev);
+                let left_bearing = self.side_bearings.left(next_char);
+                let kerning = self.kerning(prev, next_char).unwrap_or_default();
+                right_bearing + kerning + left_bearing
+            }
+            None => self.side_bearings.left(next_char),
+        }
+    }
+
+    /// Returns the kerning between two glyphs.
+    fn kerning(&self, left: GlyphIndex, right: GlyphIndex) -> Option<i32> {
+        self.kerning.kerning_override(left, right).or_else(|| {
+            self.kerning.kerning(
+                self.left_kerning_class(left),
+                self.right_kerning_class(right),
+            )
+        })
+    }
+
+    /// Returns the left kerning class for a glyph.
+    /// The left kerning class is stored in the upper 4 bits of the byte.
+    fn left_kerning_class(&self, index: GlyphIndex) -> u8 {
+        self.glyph_data[index.0 * 5 + 3]
+    }
+
+    /// Returns the right kerning class for a glyph.
+    /// The right kerning class is stored in the lower 4 bits of the byte.
+    fn right_kerning_class(&self, index: GlyphIndex) -> u8 {
+        self.glyph_data[index.0 * 5 + 4]
+    }
+
     /// Returns the width of a glyph in the font image.
     pub fn glyph_width(&self, index: GlyphIndex) -> i32 {
-        (self.glyph_data[index.0 * 3 + 2] & 0x0F) as i32
+        (self.glyph_data[index.0 * 5 + 2] & 0x0F) as i32
     }
 
     /// Returns a subimage for a glyph.
@@ -147,5 +183,48 @@ mod tests {
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 6))); // ss
         assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 7))); // yj
         assert_eq!(chars.next(), None);
+    }
+
+    #[test]
+    fn test_letter_spacing() {
+        assert_eq!(
+            MOGEEFONT.letter_spacing(Some(MOGEEFONT.glyph_index('o')), MOGEEFONT.glyph_index(',')),
+            0
+        );
+    }
+
+    #[test]
+    fn test_kerning() {
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('T'), MOGEEFONT.glyph_index('/')),
+            Some(-2)
+        );
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('/'), MOGEEFONT.glyph_index('/')),
+            Some(-2)
+        );
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('o'), MOGEEFONT.glyph_index(',')),
+            Some(-1)
+        );
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('u'), MOGEEFONT.glyph_index('s')),
+            None
+        );
+    }
+
+    #[test]
+    fn test_kerning_classes() {
+        assert_eq!(MOGEEFONT.left_kerning_class(MOGEEFONT.glyph_index('o')), 16);
+        assert_eq!(
+            MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index(',')),
+            14
+        );
+    }
+
+    #[test]
+    fn test_side_bearings() {
+        assert_eq!(MOGEEFONT.side_bearings.left(MOGEEFONT.glyph_index(',')), 0);
+        assert_eq!(MOGEEFONT.side_bearings.right(MOGEEFONT.glyph_index('o')), 1);
     }
 }

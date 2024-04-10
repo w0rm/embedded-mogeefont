@@ -16,9 +16,9 @@ pub struct ElmFileData {
     pub space_width: u32,
     pub default_bearings: (i8, i8),
     pub bearings: BTreeMap<String, (i8, i8)>,
-    pub left_kerning_class: Vec<(usize, Vec<String>)>,
-    pub right_kerning_class: Vec<(usize, Vec<String>)>,
-    pub kering_pairs: Vec<(usize, usize, i8)>,
+    pub left_kerning_class: Vec<(u8, Vec<String>)>,
+    pub right_kerning_class: Vec<(u8, Vec<String>)>,
+    pub kering_pairs: Vec<(u8, u8, i8)>,
     pub kerning_overrides: Vec<(String, String, i8)>,
 }
 
@@ -184,8 +184,8 @@ impl TryFrom<&Path> for ElmFileData {
 
         // Kerning class
         let query = Query::new(language, KERNING_CLASS).expect("Failed to create query");
-        let mut left_kerning_class: Vec<(usize, Vec<String>)> = Vec::new();
-        let mut right_kerning_class: Vec<(usize, Vec<String>)> = Vec::new();
+        let mut left_kerning_class = Vec::new();
+        let mut right_kerning_class = Vec::new();
         for m in cursor.matches(&query, root_node, elm_code) {
             let class = m.captures[1].parse(elm_code);
             let arr_query = Query::new(language, STRING_LIST).expect("Failed to create query");

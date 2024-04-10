@@ -1,6 +1,7 @@
 use clap::Parser;
 use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::{convert::TryFrom, io::Write as IOWrite, path::Path};
 mod elm_file_data;
@@ -61,6 +62,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 struct Glyph {
     left: u32,
     top: u32,
+    left_kerning_class: u8,
+    right_kerning_class: u8,
     img: image::GrayImage,
 }
 
@@ -72,6 +75,8 @@ struct FontData {
     em_height: u32,
     glyph_bearings: Vec<(u32, i8, i8)>,
     default_bearings: (i8, i8),
+    kerning_overrides: Vec<(u32, u32, i8)>,
+    kering_pairs: Vec<(u8, u8, i8)>,
 }
 
 impl FontData {
@@ -85,8 +90,14 @@ impl FontData {
             space_width,
             default_bearings,
             bearings,
-            ..
+            left_kerning_class,
+            right_kerning_class,
+            mut kering_pairs,
+            kerning_overrides,
         } = elm_file_data;
+
+        // Ensure we can use binary search on the kerning pairs
+        kering_pairs.sort_by_key(|(left, right, _)| (*left, *right));
 
         // Add a space glyph
         code_points_and_images.push((
@@ -97,15 +108,14 @@ impl FontData {
         // First glyphs, then ligatures
         code_points_and_images.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let (code_points, images) = code_points_and_images
-            .into_iter()
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-
         let mut glyph_code_points = Vec::new();
         let mut ligature_code_points = Vec::new();
         let mut glyph_bearings = Vec::new();
-        for (glyph_offset, code_point) in code_points.into_iter().enumerate() {
+        let mut code_point_to_offset = BTreeMap::new();
+        for (glyph_offset, (code_point, _)) in code_points_and_images.iter().enumerate() {
             let str_code_point = code_point.as_string();
+
+            code_point_to_offset.insert(str_code_point.clone(), glyph_offset as u32);
 
             if let Some((left_bearing, right_bearing)) = bearings.get(&str_code_point) {
                 glyph_bearings.push((glyph_offset as u32, *left_bearing, *right_bearing));
@@ -113,7 +123,7 @@ impl FontData {
 
             match code_point {
                 CodePoint::Single(p) => {
-                    glyph_code_points.push(p.into());
+                    glyph_code_points.push(*p as u32);
                 }
                 CodePoint::Ligature(p) => {
                     ligature_code_points.push(p.chars().map(|c| c.into()).collect());
@@ -121,12 +131,39 @@ impl FontData {
             }
         }
 
+        let mut left_kerning_classes: BTreeMap<String, u8> = BTreeMap::new();
+        for (class, chars) in left_kerning_class {
+            for c in chars {
+                left_kerning_classes.insert(c, class);
+            }
+        }
+        let mut right_kerning_classes: BTreeMap<String, u8> = BTreeMap::new();
+        for (class, chars) in right_kerning_class {
+            for c in chars {
+                right_kerning_classes.insert(c, class);
+            }
+        }
+
+        let mut kerning_overrides = kerning_overrides
+            .into_iter()
+            .map(|(left_char, right_char, kerning)| {
+                (
+                    code_point_to_offset[&left_char],
+                    code_point_to_offset[&right_char],
+                    kerning,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Ensure we can use binary search on the kerning overrides
+        kerning_overrides.sort_by_key(|(left, right, _)| (*left, *right));
+
         let mut left = 0;
         let mut top = 0;
         let mut glyphs = Vec::new();
         // 1 pixel spacing between glyphs is for pure aesthetic reasons
         let spacing = 1;
-        for img in images {
+        for (code_point, img) in code_points_and_images.into_iter() {
             let width = img.width();
             if left + width > ATLAS_WIDTH {
                 left = 0;
@@ -135,6 +172,12 @@ impl FontData {
             glyphs.push(Glyph {
                 left,
                 top,
+                left_kerning_class: *left_kerning_classes
+                    .get(&code_point.as_string())
+                    .unwrap_or(&0),
+                right_kerning_class: *right_kerning_classes
+                    .get(&code_point.as_string())
+                    .unwrap_or(&0),
                 img: img.clone(),
             });
             left += width + spacing;
@@ -149,6 +192,8 @@ impl FontData {
             em_height,
             glyph_bearings,
             default_bearings,
+            kerning_overrides,
+            kering_pairs,
         }
     }
 
@@ -252,6 +297,30 @@ impl FontData {
         st
     }
 
+    /// Generate a string representation of the kerning pairs
+    fn kerning_pairs(&self) -> String {
+        let mut st = String::new();
+        for (i, (left_class, right_class, kerning)) in self.kering_pairs.iter().enumerate() {
+            if i > 0 {
+                st.push_str(", ");
+            }
+            st.push_str(&format!("({}, {}, {})", left_class, right_class, kerning));
+        }
+        st
+    }
+
+    /// Generate a string representation of the kerning overrides
+    fn kerning_overrides(&self) -> String {
+        let mut st = String::new();
+        for (i, (left, right, kerning)) in self.kerning_overrides.iter().enumerate() {
+            if i > 0 {
+                st.push_str(", ");
+            }
+            st.push_str(&format!("({}, {}, {})", left, right, kerning));
+        }
+        st
+    }
+
     /// Generate a string representation of the ligature code points
     fn ligature_code_points(&self) -> String {
         let mut st = String::new();
@@ -279,7 +348,13 @@ impl FontData {
         for glyph in self.glyphs.iter() {
             // concat width and height into a single u8
             let dimensions = (glyph.img.height() as u8) << 4 | (glyph.img.width() as u8);
-            glyph_data.extend_from_slice(&[glyph.left as u8, glyph.top as u8, dimensions]);
+            glyph_data.extend_from_slice(&[
+                glyph.left as u8,
+                glyph.top as u8,
+                dimensions,
+                glyph.left_kerning_class,
+                glyph.right_kerning_class,
+            ]);
         }
         std::fs::write(raw_file, &glyph_data)
     }
@@ -315,9 +390,13 @@ impl FontData {
         let default_bearings =
             format!("({}, {})", self.default_bearings.0, self.default_bearings.1);
 
+        let kerning_pairs = self.kerning_pairs();
+        let kerning_overrides = self.kerning_overrides();
+
         writeln!(
             file,
             r#"use crate::font::Font;
+use crate::kerning::Kerning;
 use crate::ligature_substitution::StrLigatureSubstitution;
 use crate::side_bearings::SideBearings;
 use embedded_graphics::image::ImageRaw;
@@ -334,6 +413,10 @@ pub const MOGEEFONT: Font<'_> = Font {{
     side_bearings: SideBearings::new(
         &[{side_bearings}],
         {default_bearings},
+    ),
+    kerning: Kerning::new(
+        &[{kerning_pairs}],
+        &[{kerning_overrides}],
     ),
     ligature_substitution: StrLigatureSubstitution::new(
         "{ligature_code_points}",
