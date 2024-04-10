@@ -7,19 +7,20 @@ use embedded_graphics::{
 };
 
 use crate::ligature_substitution::StrLigatureSubstitution;
+use crate::side_bearings::SideBearings;
 
 pub struct Font<'a> {
     pub(crate) image: ImageRaw<'a, BinaryColor>,
     pub(crate) glyph_mapping: StrGlyphMapping<'a>,
     pub(crate) glyph_data: &'a [u8],
     pub(crate) ligature_substitution: StrLigatureSubstitution<'a>,
+    pub(crate) side_bearings: SideBearings<'a>,
     pub(crate) character_height: u32,
     pub(crate) baseline: u32,
-    pub(crate) character_spacing: i32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct GlyphIndex(usize);
+pub struct GlyphIndex(pub(crate) usize);
 
 impl<'a> Font<'a> {
     pub fn char_offsets<'t>(&'a self, text: &'t str) -> impl Iterator<Item = GlyphIndex> + 't

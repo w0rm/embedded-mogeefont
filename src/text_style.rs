@@ -31,6 +31,17 @@ impl<'a, C> TextStyle<'a, C> {
         }
     }
 
+    fn letter_spacing(&self, prev_char: Option<GlyphIndex>, next_char: GlyphIndex) -> i32 {
+        match prev_char {
+            Some(prev) => {
+                let right_bearing = self.font.side_bearings.right(prev);
+                let left_bearing = self.font.side_bearings.left(next_char);
+                right_bearing + left_bearing
+            }
+            None => self.font.side_bearings.left(next_char),
+        }
+    }
+
     fn line_elements<'t>(
         &'a self,
         mut position: Point,
@@ -41,20 +52,20 @@ impl<'a, C> TextStyle<'a, C> {
     {
         let mut chars = self.font.char_offsets(text);
         let mut next_char = chars.next();
-        let mut add_spacing = false;
+        let mut letter_spacing = next_char.map(|c| self.letter_spacing(None, c));
 
         core::iter::from_fn(move || {
-            if add_spacing {
+            if let Some(spacing) = letter_spacing {
                 let p = position;
-                position.x += self.font.character_spacing;
-                add_spacing = false;
+                position.x += spacing;
+                letter_spacing = None;
                 Some((p, LineElement::Spacing))
             } else if let Some(c) = next_char {
                 let p = position;
                 let char_width = self.font.glyph_width(c);
                 position.x += char_width;
                 next_char = chars.next();
-                add_spacing = next_char.is_some();
+                letter_spacing = next_char.map(|c| self.letter_spacing(Some(c), c));
                 Some((p, LineElement::Char(c)))
             } else {
                 Some((position, LineElement::Done))

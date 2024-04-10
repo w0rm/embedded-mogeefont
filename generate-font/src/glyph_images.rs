@@ -10,6 +10,15 @@ pub enum CodePoint {
     Ligature(String),
 }
 
+impl CodePoint {
+    pub fn as_string(&self) -> String {
+        match self {
+            CodePoint::Single(c) => c.to_string(),
+            CodePoint::Ligature(s) => s.clone(),
+        }
+    }
+}
+
 impl Ord for CodePoint {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
@@ -38,12 +47,12 @@ impl PartialOrd for CodePoint {
 }
 
 impl TryFrom<&Path> for GlyphImages {
-    type Error = std::io::Error;
+    type Error = Box<dyn std::error::Error>;
 
     /// Read the png images from the font directory
-    fn try_from(path: &Path) -> std::io::Result<Self> {
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
         let font_dir = std::fs::read_dir(path)?;
-        let mut glyphs: Vec<(CodePoint, image::GrayImage)> = Vec::new();
+        let mut code_points_and_images = Vec::new();
 
         // Iterate over the png images in the font directory
         for entry in font_dir {
@@ -59,7 +68,7 @@ impl TryFrom<&Path> for GlyphImages {
             // Extract the unicode code points from the file stem
             // for ligatures there are multiple code points, separated by "_"
             let path = entry.path();
-            let img = image::open(&path).unwrap().to_luma8();
+            let img = image::open(&path)?.to_luma8();
 
             // We fit dimensions of the image into u8
             if img.width() > 16 || img.height() > 16 {
@@ -72,7 +81,7 @@ impl TryFrom<&Path> for GlyphImages {
                 .to_str()
                 .unwrap_or_default()
                 .split('_')
-                .map(|s| char::from_u32(u32::from_str_radix(s, 16).unwrap()).unwrap())
+                .filter_map(|s| char::from_u32(u32::from_str_radix(s, 16).ok()?))
                 .collect();
 
             let code_point = match code_points[..] {
@@ -81,11 +90,11 @@ impl TryFrom<&Path> for GlyphImages {
                 _ => CodePoint::Ligature(code_points.into_iter().collect()),
             };
 
-            glyphs.push((code_point, img));
+            code_points_and_images.push((code_point, img));
         }
 
         Ok(GlyphImages {
-            code_points_and_images: glyphs,
+            code_points_and_images,
         })
     }
 }

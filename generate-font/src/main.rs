@@ -2,7 +2,7 @@ use clap::Parser;
 use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder};
 use std::error::Error;
-use std::{collections::BTreeMap, convert::TryFrom, io::Write as IOWrite, path::Path};
+use std::{convert::TryFrom, io::Write as IOWrite, path::Path};
 mod elm_file_data;
 use elm_file_data::ElmFileData;
 mod glyph_images;
@@ -70,6 +70,8 @@ struct FontData {
     glyphs: Vec<Glyph>,
     atlas_height: u32,
     em_height: u32,
+    glyph_bearings: Vec<(u32, i8, i8)>,
+    default_bearings: (i8, i8),
 }
 
 impl FontData {
@@ -81,6 +83,8 @@ impl FontData {
         let ElmFileData {
             em_height,
             space_width,
+            default_bearings,
+            bearings,
             ..
         } = elm_file_data;
 
@@ -99,16 +103,20 @@ impl FontData {
 
         let mut glyph_code_points = Vec::new();
         let mut ligature_code_points = Vec::new();
-        let mut glyph_offsets: BTreeMap<String, usize> = BTreeMap::new();
+        let mut glyph_bearings = Vec::new();
         for (glyph_offset, code_point) in code_points.into_iter().enumerate() {
+            let str_code_point = code_point.as_string();
+
+            if let Some((left_bearing, right_bearing)) = bearings.get(&str_code_point) {
+                glyph_bearings.push((glyph_offset as u32, *left_bearing, *right_bearing));
+            }
+
             match code_point {
                 CodePoint::Single(p) => {
                     glyph_code_points.push(p.into());
-                    glyph_offsets.insert(p.to_string(), glyph_offset);
                 }
                 CodePoint::Ligature(p) => {
                     ligature_code_points.push(p.chars().map(|c| c.into()).collect());
-                    glyph_offsets.insert(p, glyph_offset);
                 }
             }
         }
@@ -139,6 +147,8 @@ impl FontData {
             ligature_code_points,
             atlas_height,
             em_height,
+            glyph_bearings,
+            default_bearings,
         }
     }
 
@@ -226,6 +236,23 @@ impl FontData {
         (st, substitute_index)
     }
 
+    /// Generate a string representation of the side bearings
+    fn side_bearings(&self) -> String {
+        let mut st = String::new();
+        for (i, (code_point, left_bearing, right_bearing)) in self.glyph_bearings.iter().enumerate()
+        {
+            if i > 0 {
+                st.push_str(", ");
+            }
+            st.push_str(&format!(
+                "({}, {}, {})",
+                code_point, left_bearing, right_bearing
+            ));
+        }
+        st
+    }
+
+    /// Generate a string representation of the ligature code points
     fn ligature_code_points(&self) -> String {
         let mut st = String::new();
         for code_points in self.ligature_code_points.iter() {
@@ -284,11 +311,15 @@ impl FontData {
         let mut file = std::fs::File::create(rust_file)?;
 
         let character_height = self.em_height;
+        let side_bearings = self.side_bearings();
+        let default_bearings =
+            format!("({}, {})", self.default_bearings.0, self.default_bearings.1);
 
         writeln!(
             file,
             r#"use crate::font::Font;
 use crate::ligature_substitution::StrLigatureSubstitution;
+use crate::side_bearings::SideBearings;
 use embedded_graphics::image::ImageRaw;
 use embedded_graphics::mono_font::mapping::StrGlyphMapping;
 
@@ -300,13 +331,16 @@ pub const MOGEEFONT: Font<'_> = Font {{
         {substitute_index},
     ),
     glyph_data: include_bytes!("{relative_glyphs_path}"),
+    side_bearings: SideBearings::new(
+        &[{side_bearings}],
+        {default_bearings},
+    ),
     ligature_substitution: StrLigatureSubstitution::new(
         "{ligature_code_points}",
         {ligature_offset},
     ),
     character_height: {character_height},
     baseline: 8,
-    character_spacing: 1,
 }};"#,
         )?;
 

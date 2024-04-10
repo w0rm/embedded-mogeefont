@@ -6,6 +6,7 @@
 /// - rightKerningClass (Dict.fromList)
 /// - kerningPairs (Dict.fromList)
 /// - kerningOverrides (Dict.fromList)
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::{fmt::Debug, path::Path};
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
@@ -13,12 +14,12 @@ use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
 pub struct ElmFileData {
     pub em_height: u32,
     pub space_width: u32,
-    pub default_bearings: (i32, i32),
-    pub bearings: Vec<(String, i32, i32)>,
+    pub default_bearings: (i8, i8),
+    pub bearings: BTreeMap<String, (i8, i8)>,
     pub left_kerning_class: Vec<(usize, Vec<String>)>,
     pub right_kerning_class: Vec<(usize, Vec<String>)>,
-    pub kering_pairs: Vec<(usize, usize, i32)>,
-    pub kerning_overrides: Vec<(String, String, i32)>,
+    pub kering_pairs: Vec<(usize, usize, i8)>,
+    pub kerning_overrides: Vec<(String, String, i8)>,
 }
 
 /// emHeight =
@@ -177,7 +178,7 @@ impl TryFrom<&Path> for ElmFileData {
                 let char = m.captures[1].to_string(elm_code);
                 let left_bearing = m.captures[2].parse(elm_code);
                 let right_bearing = m.captures[3].parse(elm_code);
-                (char, left_bearing, right_bearing)
+                (char, (left_bearing, right_bearing))
             })
             .collect();
 

@@ -2,6 +2,7 @@ mod draw_target;
 mod font;
 mod generated;
 mod ligature_substitution;
+mod side_bearings;
 mod text_style;
 
 pub use font::Font;
