@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 /// Parse Elm file to get the following data:
 /// - emHeight and spaceWidth (number constants)
 /// - defaultBearings (tuple)
@@ -7,7 +6,8 @@ use std::fmt::Debug;
 /// - rightKerningClass (Dict.fromList)
 /// - kerningPairs (Dict.fromList)
 /// - kerningOverrides (Dict.fromList)
-use std::{path::Path, str::FromStr};
+use std::str::FromStr;
+use std::{fmt::Debug, path::Path};
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
 
 pub struct ElmFileData {
@@ -133,12 +133,11 @@ const STRING_LIST: &str = r#"
     exprList: (string_constant_expr (regular_string_part) @string)
 )"#;
 
-impl<P> From<P> for ElmFileData
-where
-    P: AsRef<Path>,
-{
-    fn from(elm_file: P) -> Self {
-        let elm_code = std::fs::read(elm_file).unwrap();
+impl TryFrom<&Path> for ElmFileData {
+    type Error = std::io::Error;
+
+    fn try_from(elm_file: &Path) -> std::io::Result<Self> {
+        let elm_code = std::fs::read(elm_file)?;
         let elm_code = elm_code.as_slice();
         let language = tree_sitter_elm::language();
         let tree = {
@@ -224,7 +223,7 @@ where
             })
             .collect();
 
-        ElmFileData {
+        Ok(ElmFileData {
             em_height,
             space_width,
             default_bearings: (left_default_bearing, right_default_bearing),
@@ -233,7 +232,7 @@ where
             right_kerning_class,
             kering_pairs,
             kerning_overrides,
-        }
+        })
     }
 }
 

@@ -2,11 +2,13 @@ use clap::Parser;
 use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder, ImageResult};
 use std::{collections::BTreeMap, convert::TryFrom, fmt::Write, io::Write as IOWrite, path::Path};
-
 mod elm_file_data;
 use elm_file_data::ElmFileData;
 
-const ATLAS_WIDTH: usize = 128;
+mod glyph_images;
+use glyph_images::{CodePoint, GlyphImages};
+
+const ATLAS_WIDTH: u32 = 128;
 
 // Clapp application parameters
 #[derive(Parser)]
@@ -43,54 +45,24 @@ struct GenerateFont {
 
 fn main() {
     let args = GenerateFont::parse();
-    let font_data = FontData::try_from((args.font_dir, args.elm_file)).unwrap();
+    let glyph_images = GlyphImages::try_from(args.font_dir.as_ref()).unwrap();
+    let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref()).unwrap();
+    let font_data = FontData::new(glyph_images, elm_file_data);
+
     font_data.save_png(&args.png_file, 2).unwrap();
     font_data.save_raw(&args.raw_file).unwrap();
     font_data.save_raw_glyph_data(&args.raw_glyph_data).unwrap();
-
     font_data
         .save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)
         .unwrap();
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum CodePoint {
-    Single(String),
-    Ligature(String),
-}
-
-impl Ord for CodePoint {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
-    }
-}
-
-impl PartialOrd for CodePoint {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (CodePoint::Single(a), CodePoint::Single(b)) => a.partial_cmp(b),
-            (CodePoint::Ligature(a), CodePoint::Ligature(b)) => {
-                if a.len() < b.len() {
-                    // longer ligatures should come first
-                    // because we want fff to be before ff
-                    Some(std::cmp::Ordering::Greater)
-                } else if a.len() > b.len() {
-                    Some(std::cmp::Ordering::Less)
-                } else {
-                    a.partial_cmp(b)
-                }
-            }
-            (CodePoint::Single(_), CodePoint::Ligature(_)) => Some(std::cmp::Ordering::Less),
-            (CodePoint::Ligature(_), CodePoint::Single(_)) => Some(std::cmp::Ordering::Greater),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Glyph {
-    code_point: CodePoint,
-    left: usize,
-    top: usize,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
     img: image::GrayImage,
 }
 
@@ -98,41 +70,38 @@ struct FontData {
     bitmap_data: Vec<u8>,
     glyph_code_points: Vec<u32>,
     ligature_code_points: Vec<Vec<u32>>,
-    glyph_data: Vec<u8>, // left, top, width, height for each glyph then ligature
-    height: usize,
+    glyphs: Vec<Glyph>,
+    atlas_height: u32,
     em_height: u32,
 }
 
 impl FontData {
-    fn new(glyphs_data: Vec<Glyph>, height: usize, elm_file_data: ElmFileData) -> Self {
-        let mut bitmap = vec![false; ATLAS_WIDTH * height];
+    fn new(glyphs_images: GlyphImages, elm_file_data: ElmFileData) -> Self {
+        let mut code_points_and_images = glyphs_images.glyphs;
+        let em_height = elm_file_data.em_height;
+
+        // Add a space glyph
+        code_points_and_images.push((
+            CodePoint::Single(" ".to_string()),
+            image::GrayImage::from_pixel(
+                elm_file_data.space_width,
+                em_height,
+                image::Luma::from([255]),
+            ),
+        ));
+
+        // First glyphs, then ligatures
+        code_points_and_images.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let (code_points, images) = code_points_and_images
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let mut glyph_code_points = Vec::new();
         let mut ligature_code_points = Vec::new();
-        let mut glyph_data = Vec::new();
-
-        // mapping from glyph code points to glyph index
         let mut glyph_offsets: BTreeMap<&str, usize> = BTreeMap::new();
-
-        for (glyph_offset, glyph) in glyphs_data.iter().enumerate() {
-            let glyph_width = usize::try_from(glyph.img.width()).unwrap();
-            let glyph_height = usize::try_from(glyph.img.height()).unwrap();
-            for y in 0..glyph_height {
-                for x in 0..glyph_width {
-                    if glyph.img.get_pixel(x as u32, y as u32).0[0] == 0 {
-                        bitmap[glyph.left + x + (glyph.top + y) * ATLAS_WIDTH] = true;
-                    }
-                }
-            }
-
-            glyph_data.extend_from_slice(&[
-                glyph.left as u8,
-                glyph.top as u8,
-                glyph_width as u8,
-                glyph_height as u8,
-            ]);
-
-            match &glyph.code_point {
+        for (glyph_offset, code_point) in code_points.iter().enumerate() {
+            match code_point {
                 CodePoint::Single(p) => {
                     glyph_code_points.push(p.chars().next().unwrap() as u32);
                     glyph_offsets.insert(&p, glyph_offset);
@@ -140,6 +109,42 @@ impl FontData {
                 CodePoint::Ligature(p) => {
                     ligature_code_points.push(p.chars().map(|c| c as u32).collect());
                     glyph_offsets.insert(&p, glyph_offset);
+                }
+            }
+        }
+
+        let mut left = 0;
+        let mut top = 0;
+        let mut glyphs = Vec::new();
+        for img in images {
+            let (width, height) = img.dimensions();
+            if left + width > ATLAS_WIDTH {
+                left = 0;
+                top += em_height + 1;
+            }
+            glyphs.push(Glyph {
+                left,
+                top,
+                width,
+                height,
+                img: img.clone(),
+            });
+            left += width + 1;
+        }
+
+        let atlas_height = top + em_height;
+
+        let bitmap_size = usize::try_from(ATLAS_WIDTH * atlas_height).unwrap();
+        let mut bitmap = vec![false; bitmap_size];
+
+        for glyph in glyphs.iter() {
+            for y in 0..glyph.height {
+                for x in 0..glyph.width {
+                    if glyph.img.get_pixel(x, y).0[0] == 0 {
+                        let index = usize::try_from(glyph.left + x + (glyph.top + y) * ATLAS_WIDTH)
+                            .unwrap();
+                        bitmap[index] = true;
+                    }
                 }
             }
         }
@@ -153,34 +158,16 @@ impl FontData {
                     .map(|(i, _)| 0x80 >> i)
                     .sum()
             })
-            .collect::<Vec<_>>();
+            .collect();
 
         Self {
             bitmap_data,
-            glyph_data,
+            glyphs,
             glyph_code_points,
             ligature_code_points,
-            height,
-            em_height: elm_file_data.em_height,
+            atlas_height,
+            em_height,
         }
-    }
-
-    fn pixel(&self, x: usize, y: usize) -> bool {
-        self.bitmap_data[x / 8 + y * (ATLAS_WIDTH / 8)] & (128 >> x % 8) != 0
-    }
-
-    fn to_png(&self) -> image::GrayImage {
-        let mut img = image::GrayImage::new(ATLAS_WIDTH as u32, self.height as u32);
-        for y in 0..self.height {
-            for x in 0..ATLAS_WIDTH {
-                img.put_pixel(
-                    x as u32,
-                    y as u32,
-                    image::Luma::from([255 * self.pixel(x, y) as u8]),
-                );
-            }
-        }
-        img
     }
 
     pub fn png_data(&self, scale: u32) -> String {
@@ -196,7 +183,10 @@ impl FontData {
     }
 
     fn scaled_image(&self, scale: u32) -> image::GrayImage {
-        let image = self.to_png();
+        let image = image::GrayImage::from_fn(ATLAS_WIDTH, self.atlas_height, |x, y| {
+            let index = usize::try_from(x / 8 + y * (ATLAS_WIDTH / 8)).unwrap();
+            image::Luma::from([(self.bitmap_data[index] & (128 >> x % 8)) * 255])
+        });
         resize(
             &image,
             image.width() * scale,
@@ -258,7 +248,16 @@ impl FontData {
     }
 
     pub fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
-        std::fs::write(raw_file, &self.glyph_data)
+        let mut glyph_data = Vec::new();
+        for glyph in self.glyphs.iter() {
+            glyph_data.extend_from_slice(&[
+                glyph.left as u8,
+                glyph.top as u8,
+                glyph.width as u8,
+                glyph.height as u8,
+            ]);
+        }
+        std::fs::write(raw_file, &glyph_data)
     }
 
     pub fn save_rust<P: AsRef<Path>>(
@@ -315,91 +314,5 @@ pub const MOGEEFONT: Font<'_> = Font {{
     character_spacing: 1,
 }};"#,
         )
-    }
-}
-
-impl<P> TryFrom<(P, P)> for FontData
-where
-    P: AsRef<Path>,
-{
-    type Error = std::io::Error;
-
-    fn try_from(paths: (P, P)) -> std::io::Result<Self> {
-        // Read the png images from the font directory
-        let font_dir = std::fs::read_dir(paths.0)?;
-        let elm_file_data = ElmFileData::from(paths.1);
-
-        let mut all_glyphs: Vec<(CodePoint, image::GrayImage)> = Vec::new();
-
-        // Iterate over the png images in the font directory
-        for entry in font_dir {
-            let entry = match entry {
-                Ok(entry) => match entry.path().extension() {
-                    Some(ext) if ext != "png" => continue,
-                    None => continue,
-                    _ => entry,
-                },
-                Err(_) => continue,
-            };
-
-            // Extract the unicode code points from the file stem
-            // for ligatures there are multiple code points, separated by "_"
-            let path = entry.path();
-            let img = image::open(&path).unwrap().to_luma8();
-            let code_points: Vec<char> = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_str()
-                .unwrap_or_default()
-                .split('_')
-                .map(|s| char::from_u32(u32::from_str_radix(s, 16).unwrap()).unwrap())
-                .collect();
-
-            let code_point = match code_points.len() {
-                0 => panic!("No code points found"),
-                1 => CodePoint::Single(code_points.into_iter().collect()),
-                _ => CodePoint::Ligature(code_points.into_iter().collect()),
-            };
-
-            all_glyphs.push((code_point, img));
-        }
-
-        // Add a space glyph
-        all_glyphs.push((
-            CodePoint::Single(" ".to_string()),
-            image::GrayImage::from_pixel(
-                elm_file_data.space_width,
-                elm_file_data.em_height,
-                image::Luma::from([255]),
-            ),
-        ));
-
-        // First glyphs, then ligatures
-        all_glyphs.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut left = 0;
-        let mut top = 0;
-        let mut glyphs_data = Vec::new();
-
-        for (code_point, img) in all_glyphs {
-            let width = usize::try_from(img.width()).unwrap();
-            if left + width > ATLAS_WIDTH {
-                left = 0;
-                top += elm_file_data.em_height as usize + 1;
-            }
-            glyphs_data.push(Glyph {
-                left,
-                top,
-                img,
-                code_point,
-            });
-            left += width + 1;
-        }
-
-        Ok(FontData::new(
-            glyphs_data,
-            top + elm_file_data.em_height as usize,
-            elm_file_data,
-        ))
     }
 }
