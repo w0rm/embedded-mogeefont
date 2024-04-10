@@ -1,5 +1,5 @@
 [package]
-name = "embedded_mogeefont"
+name = "embedded-mogeefont"
 version = "0.1.0"
 authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
 edition = "2021"

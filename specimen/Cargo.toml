@@ -14,5 +14,5 @@ lto = true
 console_error_panic_hook = "0.1.5"
 embedded-graphics = "0.8.1"
 embedded-graphics-web-simulator = "0.4.0"
-embedded_mogeefont = { path = ".." }
+embedded-mogeefont = { path = ".." }
 wasm-bindgen = "= 0.2.91" # has to match wasm-bindgen version of wasm-server-runner

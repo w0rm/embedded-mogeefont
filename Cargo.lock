@@ -220,7 +220,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "embedded_mogeefont"
+name = "embedded-mogeefont"
 version = "0.1.0"
 dependencies = [
  "az",
@@ -410,7 +410,7 @@ dependencies = [
  "console_error_panic_hook",
  "embedded-graphics",
  "embedded-graphics-web-simulator",
- "embedded_mogeefont",
+ "embedded-mogeefont",
  "wasm-bindgen",
 ]
 
