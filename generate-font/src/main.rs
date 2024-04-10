@@ -1,10 +1,10 @@
 use clap::Parser;
 use image::imageops::resize;
-use image::{codecs::png::PngEncoder, ImageEncoder, ImageResult};
-use std::{collections::BTreeMap, convert::TryFrom, fmt::Write, io::Write as IOWrite, path::Path};
+use image::{codecs::png::PngEncoder, ImageEncoder};
+use std::error::Error;
+use std::{collections::BTreeMap, convert::TryFrom, io::Write as IOWrite, path::Path};
 mod elm_file_data;
 use elm_file_data::ElmFileData;
-
 mod glyph_images;
 use glyph_images::{CodePoint, GlyphImages};
 
@@ -43,31 +43,28 @@ struct GenerateFont {
     rust_file: String,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = GenerateFont::parse();
-    let glyph_images = GlyphImages::try_from(args.font_dir.as_ref()).unwrap();
-    let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref()).unwrap();
+    let glyph_images = GlyphImages::try_from(args.font_dir.as_ref())?;
+    let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref())?;
     let font_data = FontData::new(glyph_images, elm_file_data);
 
-    font_data.save_png(&args.png_file, 2).unwrap();
-    font_data.save_raw(&args.raw_file).unwrap();
-    font_data.save_raw_glyph_data(&args.raw_glyph_data).unwrap();
-    font_data
-        .save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)
-        .unwrap();
+    font_data.save_png(&args.png_file, 2)?;
+    font_data.save_raw(&args.raw_file)?;
+    font_data.save_raw_glyph_data(&args.raw_glyph_data)?;
+    font_data.save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)?;
+
+    Ok(())
 }
 
 #[derive(Debug)]
 struct Glyph {
     left: u32,
     top: u32,
-    width: u32,
-    height: u32,
     img: image::GrayImage,
 }
 
 struct FontData {
-    bitmap_data: Vec<u8>,
     glyph_code_points: Vec<u32>,
     ligature_code_points: Vec<Vec<u32>>,
     glyphs: Vec<Glyph>,
@@ -76,18 +73,21 @@ struct FontData {
 }
 
 impl FontData {
-    fn new(glyphs_images: GlyphImages, elm_file_data: ElmFileData) -> Self {
-        let mut code_points_and_images = glyphs_images.glyphs;
-        let em_height = elm_file_data.em_height;
+    pub fn new(glyphs_images: GlyphImages, elm_file_data: ElmFileData) -> Self {
+        let GlyphImages {
+            mut code_points_and_images,
+        } = glyphs_images;
+
+        let ElmFileData {
+            em_height,
+            space_width,
+            ..
+        } = elm_file_data;
 
         // Add a space glyph
         code_points_and_images.push((
-            CodePoint::Single(" ".to_string()),
-            image::GrayImage::from_pixel(
-                elm_file_data.space_width,
-                em_height,
-                image::Luma::from([255]),
-            ),
+            CodePoint::Single(' '),
+            image::GrayImage::from_pixel(space_width, em_height, image::Luma::from([255])),
         ));
 
         // First glyphs, then ligatures
@@ -99,16 +99,16 @@ impl FontData {
 
         let mut glyph_code_points = Vec::new();
         let mut ligature_code_points = Vec::new();
-        let mut glyph_offsets: BTreeMap<&str, usize> = BTreeMap::new();
-        for (glyph_offset, code_point) in code_points.iter().enumerate() {
+        let mut glyph_offsets: BTreeMap<String, usize> = BTreeMap::new();
+        for (glyph_offset, code_point) in code_points.into_iter().enumerate() {
             match code_point {
                 CodePoint::Single(p) => {
-                    glyph_code_points.push(p.chars().next().unwrap() as u32);
-                    glyph_offsets.insert(&p, glyph_offset);
+                    glyph_code_points.push(p.into());
+                    glyph_offsets.insert(p.to_string(), glyph_offset);
                 }
                 CodePoint::Ligature(p) => {
-                    ligature_code_points.push(p.chars().map(|c| c as u32).collect());
-                    glyph_offsets.insert(&p, glyph_offset);
+                    ligature_code_points.push(p.chars().map(|c| c.into()).collect());
+                    glyph_offsets.insert(p, glyph_offset);
                 }
             }
         }
@@ -116,52 +116,24 @@ impl FontData {
         let mut left = 0;
         let mut top = 0;
         let mut glyphs = Vec::new();
+        // 1 pixel spacing between glyphs is for pure aesthetic reasons
+        let spacing = 1;
         for img in images {
-            let (width, height) = img.dimensions();
+            let width = img.width();
             if left + width > ATLAS_WIDTH {
                 left = 0;
-                top += em_height + 1;
+                top += em_height + spacing;
             }
             glyphs.push(Glyph {
                 left,
                 top,
-                width,
-                height,
                 img: img.clone(),
             });
-            left += width + 1;
+            left += width + spacing;
         }
-
         let atlas_height = top + em_height;
 
-        let bitmap_size = usize::try_from(ATLAS_WIDTH * atlas_height).unwrap();
-        let mut bitmap = vec![false; bitmap_size];
-
-        for glyph in glyphs.iter() {
-            for y in 0..glyph.height {
-                for x in 0..glyph.width {
-                    if glyph.img.get_pixel(x, y).0[0] == 0 {
-                        let index = usize::try_from(glyph.left + x + (glyph.top + y) * ATLAS_WIDTH)
-                            .unwrap();
-                        bitmap[index] = true;
-                    }
-                }
-            }
-        }
-
-        let bitmap_data = bitmap
-            .chunks_exact(8)
-            .map(|byte| {
-                byte.iter()
-                    .enumerate()
-                    .filter(|(_, bit)| **bit)
-                    .map(|(i, _)| 0x80 >> i)
-                    .sum()
-            })
-            .collect();
-
         Self {
-            bitmap_data,
             glyphs,
             glyph_code_points,
             ligature_code_points,
@@ -170,29 +142,55 @@ impl FontData {
         }
     }
 
-    pub fn png_data(&self, scale: u32) -> String {
+    fn bitmap_data(&self) -> Result<Vec<u8>, std::num::TryFromIntError> {
+        let bitmap_size = usize::try_from(ATLAS_WIDTH * self.atlas_height)?;
+        let mut bitmap = vec![false; bitmap_size];
+        for glyph in self.glyphs.iter() {
+            for y in 0..glyph.img.height() {
+                for x in 0..glyph.img.width() {
+                    if glyph.img.get_pixel(x, y).0[0] == 0 {
+                        let index =
+                            usize::try_from(glyph.left + x + (glyph.top + y) * ATLAS_WIDTH)?;
+                        bitmap[index] = true;
+                    }
+                }
+            }
+        }
+        Ok(bitmap
+            .chunks_exact(8)
+            .map(|byte| {
+                byte.iter()
+                    .enumerate()
+                    .filter(|(_, bit)| **bit)
+                    .map(|(i, _)| 0x80 >> i)
+                    .sum()
+            })
+            .collect())
+    }
+
+    fn png_data(&self, scale: u32) -> Result<String, Box<dyn Error>> {
         let mut png = Vec::new();
-        let image = self.scaled_image(scale);
+        let image = self.scaled_image(scale)?;
         let width = image.width();
         let height = image.height();
         let data = image.into_raw();
-        PngEncoder::new(&mut png)
-            .write_image(&data, width, height, image::ColorType::L8.into())
-            .unwrap();
-        format!("data:image/png;base64,{}", &base64::encode(&png))
+        PngEncoder::new(&mut png).write_image(&data, width, height, image::ColorType::L8.into())?;
+        Ok(format!("data:image/png;base64,{}", &base64::encode(&png)))
     }
 
-    fn scaled_image(&self, scale: u32) -> image::GrayImage {
+    fn scaled_image(&self, scale: u32) -> Result<image::GrayImage, std::num::TryFromIntError> {
+        let bitmap_data = self.bitmap_data()?;
         let image = image::GrayImage::from_fn(ATLAS_WIDTH, self.atlas_height, |x, y| {
-            let index = usize::try_from(x / 8 + y * (ATLAS_WIDTH / 8)).unwrap();
-            image::Luma::from([(self.bitmap_data[index] & (128 >> x % 8)) * 255])
+            let index = usize::try_from(x / 8 + y * (ATLAS_WIDTH / 8)).unwrap_or_default();
+            let bit = bitmap_data[index] & (128 >> x % 8) != 0;
+            image::Luma::from([(if bit { 255 } else { 0 })])
         });
-        resize(
+        Ok(resize(
             &image,
             image.width() * scale,
             image.height() * scale,
             image::imageops::FilterType::Nearest,
-        )
+        ))
     }
 
     /// Generate a string representation of the glyph mapping
@@ -205,25 +203,25 @@ impl FontData {
         let mut substitute_index = 0;
         for (i, &code_point) in self.glyph_code_points.iter().skip(1).enumerate() {
             // if the code point is '?' then we remember the index
-            if code_point == '?' as u32 {
+            if code_point == '?'.into() {
                 substitute_index = i + 1;
             }
             if code_point == last + 1 {
                 last = code_point;
             } else {
                 if start == last {
-                    write!(st, "\\u{{{:x}}}", start).unwrap();
+                    st.push_str(&format!("\\u{{{:x}}}", start));
                 } else {
-                    write!(st, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last).unwrap();
+                    st.push_str(&format!("\\0\\u{{{:x}}}\\u{{{:x}}}", start, last));
                 }
                 start = code_point;
                 last = code_point;
             }
         }
         if start == last {
-            write!(st, "\\u{{{:x}}}", start).unwrap();
+            st.push_str(&format!("\\u{{{:x}}}", start));
         } else {
-            write!(st, "\\0\\u{{{:x}}}\\u{{{:x}}}", start, last).unwrap();
+            st.push_str(&format!("\\0\\u{{{:x}}}\\u{{{:x}}}", start, last));
         }
         (st, substitute_index)
     }
@@ -231,31 +229,30 @@ impl FontData {
     fn ligature_code_points(&self) -> String {
         let mut st = String::new();
         for code_points in self.ligature_code_points.iter() {
-            write!(st, "\\0").unwrap();
+            st.push_str("\\0");
             for code_point in code_points {
-                write!(st, "\\u{{{:x}}}", code_point).unwrap();
+                st.push_str(&format!("\\u{{{:x}}}", code_point));
             }
         }
         st
     }
 
-    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> ImageResult<()> {
-        self.scaled_image(scale).save(png_file)
+    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> Result<(), Box<dyn Error>> {
+        self.scaled_image(scale)?.save(png_file)?;
+        Ok(())
     }
 
-    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
-        std::fs::write(raw_file, &self.bitmap_data)
+    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> Result<(), Box<dyn Error>> {
+        std::fs::write(raw_file, &self.bitmap_data()?)?;
+        Ok(())
     }
 
     pub fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
         let mut glyph_data = Vec::new();
         for glyph in self.glyphs.iter() {
-            glyph_data.extend_from_slice(&[
-                glyph.left as u8,
-                glyph.top as u8,
-                glyph.width as u8,
-                glyph.height as u8,
-            ]);
+            // concat width and height into a single u8
+            let dimensions = (glyph.img.height() as u8) << 4 | (glyph.img.width() as u8);
+            glyph_data.extend_from_slice(&[glyph.left as u8, glyph.top as u8, dimensions]);
         }
         std::fs::write(raw_file, &glyph_data)
     }
@@ -265,26 +262,24 @@ impl FontData {
         rust_file: &P,
         raw_file: &P,
         raw_glyphs_file: &P,
-    ) -> std::io::Result<()> {
+    ) -> Result<(), Box<dyn Error>> {
         let relative_raw_path = raw_file
             .as_ref()
-            .strip_prefix(rust_file.as_ref().parent().unwrap())
-            .unwrap()
+            .strip_prefix(rust_file.as_ref().parent().unwrap())?
             .to_str()
-            .unwrap();
+            .unwrap_or_default();
 
         let relative_glyphs_path = raw_glyphs_file
             .as_ref()
-            .strip_prefix(rust_file.as_ref().parent().unwrap())
-            .unwrap()
+            .strip_prefix(rust_file.as_ref().parent().unwrap())?
             .to_str()
-            .unwrap();
+            .unwrap_or_default();
 
         let (glyph_mapping, substitute_index) = self.glyph_mapping();
         let ligature_code_points = self.ligature_code_points();
         let ligature_offset = self.glyph_code_points.len();
 
-        let png_data = self.png_data(2);
+        let png_data = self.png_data(2)?;
 
         let mut file = std::fs::File::create(rust_file)?;
 
@@ -313,6 +308,8 @@ pub const MOGEEFONT: Font<'_> = Font {{
     baseline: 8,
     character_spacing: 1,
 }};"#,
-        )
+        )?;
+
+        Ok(())
     }
 }

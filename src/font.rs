@@ -60,9 +60,11 @@ impl<'a> Font<'a> {
 
     /// Returns the area of a glyph in the font image.
     fn glyph_area(&self, index: GlyphIndex) -> Option<Rectangle> {
-        let start = index.0 * 4;
-        let end = start + 4;
-        if let [x, y, width, height] = self.glyph_data[start..end] {
+        let start = index.0 * 3;
+        let end = start + 3;
+        if let [x, y, dimensions] = self.glyph_data[start..end] {
+            let width = dimensions & 0x0F; // Lower 4 bits
+            let height = dimensions >> 4; // Upper 4 bits
             Some(Rectangle::new(
                 Point::new(x as i32, y as i32),
                 Size::new(width as u32, height as u32),
@@ -72,9 +74,9 @@ impl<'a> Font<'a> {
         }
     }
 
-    /// Returns the area of a glyph in the font image.
+    /// Returns the width of a glyph in the font image.
     pub fn glyph_width(&self, index: GlyphIndex) -> i32 {
-        self.glyph_data[index.0 * 4 + 2].into()
+        (self.glyph_data[index.0 * 3 + 2] & 0x0F) as i32
     }
 
     /// Returns a subimage for a glyph.

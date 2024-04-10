@@ -1,12 +1,12 @@
 use std::path::Path;
 
 pub struct GlyphImages {
-    pub glyphs: Vec<(CodePoint, image::GrayImage)>,
+    pub code_points_and_images: Vec<(CodePoint, image::GrayImage)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CodePoint {
-    Single(String),
+    Single(char),
     Ligature(String),
 }
 
@@ -60,6 +60,12 @@ impl TryFrom<&Path> for GlyphImages {
             // for ligatures there are multiple code points, separated by "_"
             let path = entry.path();
             let img = image::open(&path).unwrap().to_luma8();
+
+            // We fit dimensions of the image into u8
+            if img.width() > 16 || img.height() > 16 {
+                panic!("Image dimensions higher than 16: {:?}", path);
+            }
+
             let code_points: Vec<char> = path
                 .file_stem()
                 .unwrap_or_default()
@@ -69,15 +75,17 @@ impl TryFrom<&Path> for GlyphImages {
                 .map(|s| char::from_u32(u32::from_str_radix(s, 16).unwrap()).unwrap())
                 .collect();
 
-            let code_point = match code_points.len() {
-                0 => panic!("No code points found"),
-                1 => CodePoint::Single(code_points.into_iter().collect()),
+            let code_point = match code_points[..] {
+                [] => panic!("No code points found"),
+                [code_point] => CodePoint::Single(code_point),
                 _ => CodePoint::Ligature(code_points.into_iter().collect()),
             };
 
             glyphs.push((code_point, img));
         }
 
-        Ok(GlyphImages { glyphs })
+        Ok(GlyphImages {
+            code_points_and_images: glyphs,
+        })
     }
 }
