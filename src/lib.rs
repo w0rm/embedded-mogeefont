@@ -1,3 +1,4 @@
+#![no_std]
 mod draw_target;
 mod font;
 mod generated;
