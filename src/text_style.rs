@@ -19,16 +19,16 @@ use embedded_graphics::{
 
 pub struct TextStyle<'a, C> {
     /// Text color.
-    pub text_color: Option<C>,
+    text_color: C,
 
     /// Font to use.
-    pub font: &'a Font<'a>,
+    font: &'a Font<'a>,
 }
 
 impl<'a, C> TextStyle<'a, C> {
     pub fn new(text_color: C) -> Self {
         Self {
-            text_color: Some(text_color),
+            text_color,
             font: &MOGEEFONT,
         }
     }
@@ -125,14 +125,11 @@ where
     {
         let position = position - Point::new(0, self.baseline_offset(baseline));
 
-        let next = match self.text_color {
-            Some(text_color) => self.draw_string_binary(
-                text,
-                position,
-                MogeeFontDrawTarget::new(target, text_color),
-            )?,
-            None => self.advance_position(text, position),
-        };
+        let next = self.draw_string_binary(
+            text,
+            position,
+            MogeeFontDrawTarget::new(target, self.text_color),
+        )?;
 
         Ok(next + Point::new(0, self.baseline_offset(baseline)))
     }

@@ -32,14 +32,17 @@
             sha256 = "sha256-4NuvNvUHZ7n0QP42J9tuf1wqBe9f/R6iJAGeuno9qtg=";
           };
           nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux []
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [];
+          buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ ];
           cargoSha256 = "sha256-L9SK+CILDlmYwXIAESWaqnLQyZQ4oC29av1T6zE6qJo=";
         };
       in
       {
         devShell = pkgs.mkShell {
-          buildInputs = [ rust-bin wasm-server-runner ];
+          buildInputs = [
+            rust-bin
+            wasm-server-runner
+          ];
         };
       }
     );

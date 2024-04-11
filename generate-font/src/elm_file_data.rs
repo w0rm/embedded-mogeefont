@@ -1,3 +1,8 @@
+use std::collections::BTreeMap;
+use std::str::FromStr;
+use std::{fmt::Debug, path::Path};
+use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
+
 /// Parse Elm file to get the following data:
 /// - emHeight and spaceWidth (number constants)
 /// - defaultBearings (tuple)
@@ -6,11 +11,6 @@
 /// - rightKerningClass (Dict.fromList)
 /// - kerningPairs (Dict.fromList)
 /// - kerningOverrides (Dict.fromList)
-use std::collections::BTreeMap;
-use std::str::FromStr;
-use std::{fmt::Debug, path::Path};
-use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
-
 pub struct ElmFileData {
     pub em_height: u32,
     pub space_width: u32,

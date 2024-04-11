@@ -1,5 +1,4 @@
 use clap::Parser;
-use image::imageops::resize;
 use image::{codecs::png::PngEncoder, ImageEncoder};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -23,11 +22,6 @@ struct GenerateFont {
     #[clap(long, default_value = "mogeefont/src/MogeeFont.elm")]
     elm_file: String,
 
-    /// Path to the output png file
-    /// Default: "assets/mogeefont.png"
-    #[clap(long, default_value = "assets/mogeefont.png")]
-    png_file: String,
-
     /// Path to the output raw file
     /// Default: "src/mogeefont.raw"
     #[clap(long, default_value = "src/mogeefont.raw")]
@@ -50,7 +44,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref())?;
     let font_data = FontData::new(glyph_images, elm_file_data);
 
-    font_data.save_png(&args.png_file, 2)?;
     font_data.save_raw(&args.raw_file)?;
     font_data.save_raw_glyph_data(&args.raw_glyph_data)?;
     font_data.save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)?;
@@ -225,27 +218,20 @@ impl FontData {
 
     fn png_data(&self, scale: u32) -> Result<String, Box<dyn Error>> {
         let mut png = Vec::new();
-        let image = self.scaled_image(scale)?;
+        let bitmap_data = self.bitmap_data()?;
+        let image =
+            image::GrayImage::from_fn(ATLAS_WIDTH * scale, self.atlas_height * scale, |x, y| {
+                let x = x / scale;
+                let y = y / scale;
+                let index = usize::try_from(x / 8 + y * (ATLAS_WIDTH / 8)).unwrap_or_default();
+                let bit = bitmap_data[index] & (128 >> x % 8) != 0;
+                image::Luma::from([(if bit { 255 } else { 0 })])
+            });
         let width = image.width();
         let height = image.height();
         let data = image.into_raw();
         PngEncoder::new(&mut png).write_image(&data, width, height, image::ColorType::L8.into())?;
         Ok(format!("data:image/png;base64,{}", &base64::encode(&png)))
-    }
-
-    fn scaled_image(&self, scale: u32) -> Result<image::GrayImage, std::num::TryFromIntError> {
-        let bitmap_data = self.bitmap_data()?;
-        let image = image::GrayImage::from_fn(ATLAS_WIDTH, self.atlas_height, |x, y| {
-            let index = usize::try_from(x / 8 + y * (ATLAS_WIDTH / 8)).unwrap_or_default();
-            let bit = bitmap_data[index] & (128 >> x % 8) != 0;
-            image::Luma::from([(if bit { 255 } else { 0 })])
-        });
-        Ok(resize(
-            &image,
-            image.width() * scale,
-            image.height() * scale,
-            image::imageops::FilterType::Nearest,
-        ))
     }
 
     /// Generate a string representation of the glyph mapping
@@ -333,11 +319,6 @@ impl FontData {
         st
     }
 
-    pub fn save_png<P: AsRef<Path>>(&self, png_file: &P, scale: u32) -> Result<(), Box<dyn Error>> {
-        self.scaled_image(scale)?.save(png_file)?;
-        Ok(())
-    }
-
     pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> Result<(), Box<dyn Error>> {
         std::fs::write(raw_file, &self.bitmap_data()?)?;
         Ok(())
@@ -385,7 +366,7 @@ impl FontData {
 
         let mut file = std::fs::File::create(rust_file)?;
 
-        let character_height = self.em_height;
+        let em_height = self.em_height;
         let side_bearings = self.side_bearings();
         let default_bearings =
             format!("({}, {})", self.default_bearings.0, self.default_bearings.1);
@@ -422,7 +403,7 @@ pub const MOGEEFONT: Font<'_> = Font {{
         "{ligature_code_points}",
         {ligature_offset},
     ),
-    character_height: {character_height},
+    em_height: {em_height},
     baseline: 8,
 }};"#,
         )?;
