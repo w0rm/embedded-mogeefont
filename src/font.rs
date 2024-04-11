@@ -8,14 +8,14 @@ use embedded_graphics::{
 };
 
 use crate::kerning::Kerning;
-use crate::ligature_substitution::StrLigatureSubstitution;
+use crate::ligatures::Ligatures;
 use crate::side_bearings::SideBearings;
 
 pub struct Font<'a> {
     pub(crate) image: ImageRaw<'a, BinaryColor>,
     pub(crate) glyph_mapping: StrGlyphMapping<'a>,
     pub(crate) glyph_data: &'a [u8],
-    pub(crate) ligature_substitution: StrLigatureSubstitution<'a>,
+    pub(crate) ligatures: Ligatures<'a>,
     pub(crate) side_bearings: SideBearings<'a>,
     pub(crate) kerning: Kerning<'a>,
     pub(crate) em_height: u32,
@@ -36,7 +36,7 @@ impl<'a> Font<'a> {
         let mut chars = text.chars();
         core::iter::from_fn(move || {
             if let Some((liga_index, mut liga_size)) =
-                self.ligature_substitution.substitute(&text[byte_offset..])
+                self.ligatures.substitute(&text[byte_offset..])
             {
                 // Advance by the number of characters in the ligature
                 while liga_size > 0 {

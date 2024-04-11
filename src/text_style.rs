@@ -11,7 +11,7 @@ use embedded_graphics::{
     pixelcolor::{BinaryColor, PixelColor},
     primitives::Rectangle,
     text::{
-        renderer::{TextMetrics, TextRenderer},
+        renderer::{CharacterStyle, TextMetrics, TextRenderer},
         Baseline,
     },
     Drawable,
@@ -19,7 +19,7 @@ use embedded_graphics::{
 
 pub struct TextStyle<'a, C> {
     /// Text color.
-    text_color: C,
+    text_color: Option<C>,
 
     /// Font to use.
     font: &'a Font<'a>,
@@ -28,7 +28,7 @@ pub struct TextStyle<'a, C> {
 impl<'a, C> TextStyle<'a, C> {
     pub fn new(text_color: C) -> Self {
         Self {
-            text_color,
+            text_color: Some(text_color),
             font: &MOGEEFONT,
         }
     }
@@ -125,11 +125,12 @@ where
     {
         let position = position - Point::new(0, self.baseline_offset(baseline));
 
-        let next = self.draw_string_binary(
-            text,
-            position,
-            MogeeFontDrawTarget::new(target, self.text_color),
-        )?;
+        let next = match self.text_color {
+            Some(color) => {
+                self.draw_string_binary(text, position, MogeeFontDrawTarget::new(target, color))?
+            }
+            None => self.advance_position(text, position),
+        };
 
         Ok(next + Point::new(0, self.baseline_offset(baseline)))
     }
@@ -171,6 +172,30 @@ where
 
     fn line_height(&self) -> u32 {
         self.font.em_height
+    }
+}
+
+impl<'a, C> Clone for TextStyle<'a, C>
+where
+    C: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            text_color: self.text_color.clone(),
+            font: self.font,
+        }
+    }
+}
+
+impl<'a, C> CharacterStyle for TextStyle<'a, C>
+where
+    C: PixelColor,
+{
+    type Color = C;
+
+    /// Sets the text color.
+    fn set_text_color(&mut self, text_color: Option<Self::Color>) {
+        self.text_color = text_color;
     }
 }
 

@@ -1,7 +1,4 @@
-use crate::font::Font;
-use crate::kerning::Kerning;
-use crate::ligature_substitution::StrLigatureSubstitution;
-use crate::side_bearings::SideBearings;
+use crate::{font::Font, kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings};
 use embedded_graphics::image::ImageRaw;
 use embedded_graphics::mono_font::mapping::StrGlyphMapping;
 
@@ -21,7 +18,7 @@ pub const MOGEEFONT: Font<'_> = Font {
         &[(1, 14, -1), (2, 2, -1), (2, 6, 0), (2, 10, -1), (2, 13, -1), (2, 14, -1), (3, 3, -1), (3, 7, -1), (3, 14, -1), (4, 2, -2), (4, 4, -1), (4, 6, -1), (4, 7, -1), (4, 10, -1), (4, 13, -2), (4, 14, -2), (5, 3, -1), (5, 14, -1), (6, 2, -2), (6, 3, -1), (6, 4, -1), (6, 5, -1), (6, 6, -1), (6, 7, -2), (6, 13, -2), (6, 14, -2), (7, 3, -1), (7, 7, 0), (8, 7, 0), (13, 2, -1), (13, 14, -1), (14, 2, -1), (14, 6, -1), (14, 10, -1), (14, 14, -1), (15, 2, -1), (15, 13, -1), (16, 3, -1), (16, 7, -1), (16, 9, -1), (16, 14, -1), (17, 14, -1)],
         &[(15, 15, -2), (35, 69, -1), (41, 69, -1), (69, 52, -2), (80, 69, -1), (80, 160, -1), (80, 161, -1), (80, 162, -1), (138, 150, 1), (146, 150, 1)],
     ),
-    ligature_substitution: StrLigatureSubstitution::new(
+    ligatures: Ligatures::new(
         "\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}",
         160,
     ),

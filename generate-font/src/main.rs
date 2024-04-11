@@ -376,10 +376,7 @@ impl FontData {
 
         writeln!(
             file,
-            r#"use crate::font::Font;
-use crate::kerning::Kerning;
-use crate::ligature_substitution::StrLigatureSubstitution;
-use crate::side_bearings::SideBearings;
+            r#"use crate::{{font::Font, kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings}};
 use embedded_graphics::image::ImageRaw;
 use embedded_graphics::mono_font::mapping::StrGlyphMapping;
 
@@ -399,7 +396,7 @@ pub const MOGEEFONT: Font<'_> = Font {{
         &[{kerning_pairs}],
         &[{kerning_overrides}],
     ),
-    ligature_substitution: StrLigatureSubstitution::new(
+    ligatures: Ligatures::new(
         "{ligature_code_points}",
         {ligature_offset},
     ),
