@@ -25,6 +25,6 @@ pub const MOGEEFONT: Font<'_> = Font {
         "\0\u{66}\u{66}\u{69}\0\u{66}\u{66}\0\u{66}\u{69}\0\u{66}\u{6a}\0\u{67}\u{6a}\0\u{6a}\u{6a}\0\u{73}\u{73}\0\u{79}\u{6a}",
         160,
     ),
-    character_height: 11,
+    em_height: 11,
     baseline: 8,
 };

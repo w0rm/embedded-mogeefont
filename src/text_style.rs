@@ -1,13 +1,15 @@
-use crate::font::GlyphIndex;
-use crate::Font;
-use crate::{draw_target::MogeeFontDrawTarget, generated::MOGEEFONT};
+use crate::{
+    draw_target::MogeeFontDrawTarget,
+    font::{Font, GlyphIndex},
+    generated::MOGEEFONT,
+};
 use az::SaturatingAs;
-use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     image::Image,
     pixelcolor::{BinaryColor, PixelColor},
+    primitives::Rectangle,
     text::{
         renderer::{TextMetrics, TextRenderer},
         Baseline,
@@ -98,8 +100,8 @@ impl<'a, C> TextStyle<'a, C> {
     fn baseline_offset(&self, baseline: Baseline) -> i32 {
         match baseline {
             Baseline::Top => 0,
-            Baseline::Bottom => self.font.character_height.saturating_sub(1).saturating_as(),
-            Baseline::Middle => (self.font.character_height.saturating_sub(1) / 2).saturating_as(),
+            Baseline::Bottom => self.font.em_height.saturating_sub(1).saturating_as(),
+            Baseline::Middle => (self.font.em_height.saturating_sub(1) / 2).saturating_as(),
             Baseline::Alphabetic => self.font.baseline.saturating_as(),
         }
     }
@@ -139,22 +141,29 @@ where
         &self,
         width: u32,
         position: Point,
-        baseline: Baseline,
+        _baseline: Baseline,
         _target: &mut D,
     ) -> Result<Point, D::Error>
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        let position = position - Point::new(0, self.baseline_offset(baseline));
-        Ok(position + Point::new(width.saturating_as(), self.baseline_offset(baseline)))
+        Ok(position + Point::new(width.saturating_as(), 0))
     }
 
     fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
-        let bb_position = position - Point::new(0, self.baseline_offset(baseline));
+        // the bounding box position can be to the left of the position,
+        // when the first character has a negative left side bearing
+        // e.g. letter 'j'
+        let bb_position = self
+            .line_elements(position, text)
+            // skip the first element which is the spacing before the first character
+            .nth(1)
+            .map(|(p, _)| p)
+            .unwrap_or(position)
+            - Point::new(0, self.baseline_offset(baseline));
 
         let bb_width = self.advance_position(text, position).x - position.x;
-        let bb_height = self.font.character_height;
-
+        let bb_height = self.font.em_height;
         let bb_size = Size::new(bb_width.saturating_as(), bb_height);
 
         TextMetrics {
@@ -164,7 +173,7 @@ where
     }
 
     fn line_height(&self) -> u32 {
-        self.font.character_height
+        self.font.em_height
     }
 }
 
@@ -172,4 +181,73 @@ enum LineElement {
     Char(GlyphIndex),
     Spacing,
     Done,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use embedded_graphics::{geometry::Size, mock_display::MockDisplay};
+    const TEXT_POS: Point = Point::new(4, 6);
+
+    #[test]
+    fn test_draw_string() {
+        let style = TextStyle::new(BinaryColor::On);
+        let mut display = MockDisplay::new();
+        let result = style.draw_string("Hello, World!", Point::zero(), Baseline::Top, &mut display);
+        assert_eq!(result, Ok(Point::new(45, 0)));
+        assert_eq!(
+            display,
+            MockDisplay::from_pattern(&[
+                "                                             ",
+                "#  #     # #          #  #  #         #   # #",
+                "#  #     # #          #  #  #         #   # #",
+                "#  #  ## # # ##       #  #  # ##  ##  #  ## #",
+                "#### # # # # # #      #  #  # # # # # # # # #",
+                "#  # ### # # # #      #  #  # # # # # # # # #",
+                "#  # #   # # # #      # ## #  # # #   # # #  ",
+                "#  #  ## # #  ## #     #  #    ## #   # ##  #",
+                "                 #                           ",
+                "                #                            ",
+            ])
+        );
+    }
+
+    #[test]
+    fn test_measure_string() {
+        let style = TextStyle::new(BinaryColor::On);
+        let metrics = style.measure_string("Hello, World!", TEXT_POS, Baseline::Top);
+        assert_eq!(metrics.bounding_box.top_left, TEXT_POS);
+        assert_eq!(metrics.bounding_box.size, Size::new(45, 11));
+        assert_eq!(metrics.next_position, TEXT_POS + Point::new(45, 0));
+    }
+
+    #[test]
+    fn test_measure_string_negative_left_bearing() {
+        let style = TextStyle::new(BinaryColor::On);
+        let metrics = style.measure_string("just testing", TEXT_POS, Baseline::Top);
+        assert_eq!(metrics.bounding_box.top_left, TEXT_POS + Point::new(-2, 0));
+        assert_eq!(metrics.bounding_box.size, Size::new(42, 11));
+        assert_eq!(metrics.next_position, TEXT_POS + Point::new(42, 0));
+    }
+
+    #[test]
+    fn test_measure_string_baseline_bottom() {
+        let style = TextStyle::new(BinaryColor::On);
+        let metrics = style.measure_string("Hello, World!", TEXT_POS, Baseline::Bottom);
+        assert_eq!(metrics.bounding_box.top_left, Point::new(0, -10) + TEXT_POS);
+    }
+
+    #[test]
+    fn test_measure_string_baseline_middle() {
+        let style = TextStyle::new(BinaryColor::On);
+        let metrics = style.measure_string("Hello, World!", TEXT_POS, Baseline::Middle);
+        assert_eq!(metrics.bounding_box.top_left, TEXT_POS + Point::new(0, -5));
+    }
+
+    #[test]
+    fn test_measure_string_baseline_alphabetic() {
+        let style = TextStyle::new(BinaryColor::On);
+        let metrics = style.measure_string("Hello, World!", TEXT_POS, Baseline::Alphabetic);
+        assert_eq!(metrics.bounding_box.top_left, TEXT_POS + Point::new(0, -8));
+    }
 }
