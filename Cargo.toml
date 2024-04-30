@@ -9,7 +9,6 @@ edition = "2021"
 
 [dependencies]
 embedded-graphics = "0.8.1"
-az = "1.2.1"
 
 [workspace]
 members = ["specimen", "generate-font"]

@@ -1,5 +1,4 @@
 use crate::{kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings};
-use az::SaturatingAs;
 use embedded_graphics::{
     geometry::{Point, Size},
     image::{ImageDrawableExt, ImageRaw, SubImage},
@@ -64,10 +63,10 @@ impl<'a> Font<'a> {
         let start = index.0 * 5;
         let end = start + 3;
         if let [x, y, dimensions] = self.glyph_data[start..end] {
-            let width = (dimensions & 0x0F).saturating_as(); // Lower 4 bits
-            let height = (dimensions >> 4).saturating_as(); // Upper 4 bits
+            let width = (dimensions & 0x0F) as u32; // Lower 4 bits
+            let height = (dimensions >> 4) as u32; // Upper 4 bits
             Some(Rectangle::new(
-                Point::new(x.saturating_as(), y.saturating_as()),
+                Point::new(x as i32, y as i32),
                 Size::new(width, height),
             ))
         } else {
@@ -111,7 +110,7 @@ impl<'a> Font<'a> {
 
     /// Returns the width of a glyph in the font image.
     pub fn glyph_width(&self, index: GlyphIndex) -> i32 {
-        (self.glyph_data[index.0 * 5 + 2] & 0x0F).saturating_as()
+        (self.glyph_data[index.0 * 5 + 2] & 0x0F) as i32
     }
 
     /// Returns a subimage for a glyph.

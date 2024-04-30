@@ -223,7 +223,6 @@ dependencies = [
 name = "embedded-mogeefont"
 version = "0.1.0"
 dependencies = [
- "az",
  "embedded-graphics",
 ]
 

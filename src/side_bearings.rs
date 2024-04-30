@@ -1,5 +1,4 @@
 use crate::font::GlyphIndex;
-use az::SaturatingAs;
 
 pub struct SideBearings<'a> {
     bearings: &'a [(u32, i32, i32)],
@@ -16,14 +15,14 @@ impl<'a> SideBearings<'a> {
 
     pub fn left(&self, index: GlyphIndex) -> i32 {
         self.bearings
-            .binary_search_by_key(&(index.0.saturating_as()), |data| data.0)
+            .binary_search_by_key(&(index.0 as u32), |data| data.0)
             .map(|idx| self.bearings[idx].1)
             .unwrap_or(self.default_bearings.0)
     }
 
     pub fn right(&self, index: GlyphIndex) -> i32 {
         self.bearings
-            .binary_search_by_key(&(index.0.saturating_as()), |data| data.0)
+            .binary_search_by_key(&(index.0 as u32), |data| data.0)
             .map(|idx| self.bearings[idx].2)
             .unwrap_or(self.default_bearings.1)
     }

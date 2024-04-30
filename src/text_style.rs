@@ -3,7 +3,6 @@ use crate::{
     font::{Font, GlyphIndex},
     generated::MOGEEFONT,
 };
-use az::SaturatingAs;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
@@ -101,9 +100,9 @@ impl<'a, C> TextStyle<'a, C> {
     fn baseline_offset(&self, baseline: Baseline) -> i32 {
         match baseline {
             Baseline::Top => 0,
-            Baseline::Bottom => self.font.em_height.saturating_sub(1).saturating_as(),
-            Baseline::Middle => (self.font.em_height.saturating_sub(1) / 2).saturating_as(),
-            Baseline::Alphabetic => self.font.baseline.saturating_as(),
+            Baseline::Bottom => (self.font.em_height - 1) as i32,
+            Baseline::Middle => ((self.font.em_height - 1) / 2) as i32,
+            Baseline::Alphabetic => self.font.baseline as i32,
         }
     }
 }
@@ -146,7 +145,7 @@ where
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        Ok(position + Point::new(width.saturating_as(), 0))
+        Ok(position + Point::new(width as i32, 0))
     }
 
     fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
@@ -161,9 +160,9 @@ where
             .unwrap_or(position)
             - Point::new(0, self.baseline_offset(baseline));
 
-        let bb_width = self.advance_position(text, position).x - position.x;
+        let bb_width = (self.advance_position(text, position).x - position.x) as u32;
         let bb_height = self.font.em_height;
-        let bb_size = Size::new(bb_width.saturating_as(), bb_height);
+        let bb_size = Size::new(bb_width, bb_height);
 
         TextMetrics {
             bounding_box: Rectangle::new(bb_position, bb_size),
