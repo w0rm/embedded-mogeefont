@@ -17,6 +17,7 @@ use embedded_graphics::{
     Drawable,
 };
 
+#[derive(Copy)]
 pub struct TextStyle<'a, C> {
     /// Text color.
     text_color: Option<C>,

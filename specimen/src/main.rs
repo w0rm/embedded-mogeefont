@@ -21,11 +21,17 @@ pub fn main_js() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
 
     let output_settings = OutputSettingsBuilder::new().scale(4).build();
-    let mut text_display = WebSimulatorDisplay::new((128, 64), &output_settings, None);
+    let width = 128;
+    let height = 64;
+    let mut text_display = WebSimulatorDisplay::new((width, height), &output_settings, None);
 
     let character_style = TextStyle::new(Rgb565::CSS_WHITE);
     let textbox_style = TextBoxStyleBuilder::new().build();
-    let text_bounds = Rectangle::new(Point::new(2, 2), Size::new(128 - 4, 64 - 4));
+    let padding = 2;
+    let text_bounds = Rectangle::new(
+        Point::new(padding, padding),
+        Size::new(width - padding as u32 * 2, height - padding as u32 * 2),
+    );
 
     // Create the text box and apply styling options.
     let text_box = TextBox::with_textbox_style(

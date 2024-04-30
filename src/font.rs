@@ -1,3 +1,4 @@
+use crate::{kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings};
 use az::SaturatingAs;
 use embedded_graphics::{
     geometry::{Point, Size},
@@ -6,10 +7,6 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     primitives::Rectangle,
 };
-
-use crate::kerning::Kerning;
-use crate::ligatures::Ligatures;
-use crate::side_bearings::SideBearings;
 
 pub struct Font<'a> {
     pub(crate) image: ImageRaw<'a, BinaryColor>,
@@ -192,10 +189,18 @@ mod tests {
             MOGEEFONT.letter_spacing(Some(MOGEEFONT.glyph_index('o')), MOGEEFONT.glyph_index(',')),
             0
         );
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('f'), MOGEEFONT.glyph_index('o')),
+            Some(-1)
+        );
     }
 
     #[test]
     fn test_kerning() {
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('f'), MOGEEFONT.glyph_index('o')),
+            Some(-1)
+        );
         assert_eq!(
             MOGEEFONT.kerning(MOGEEFONT.glyph_index('T'), MOGEEFONT.glyph_index('/')),
             Some(-2)

@@ -229,9 +229,9 @@ dependencies = [
 
 [[package]]
 name = "embedded-text"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f37bb00b903818f924c57ba71ecaff99824ac480b3ba47a93de219d861403ac"
+checksum = "5899badc344754f785450bd64c04e03f6ceaacb5f3ae972fc1d93ae8473f4689"
 dependencies = [
  "az",
  "embedded-graphics",

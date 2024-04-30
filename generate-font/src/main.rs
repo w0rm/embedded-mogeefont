@@ -1,8 +1,6 @@
 use clap::Parser;
 use image::{codecs::png::PngEncoder, ImageEncoder};
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::{convert::TryFrom, io::Write as IOWrite, path::Path};
+use std::{collections::BTreeMap, convert::TryFrom, error::Error, io::Write, path::Path};
 mod elm_file_data;
 use elm_file_data::ElmFileData;
 mod glyph_images;
@@ -377,8 +375,7 @@ impl FontData {
         writeln!(
             file,
             r#"use crate::{{font::Font, kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings}};
-use embedded_graphics::image::ImageRaw;
-use embedded_graphics::mono_font::mapping::StrGlyphMapping;
+use embedded_graphics::{{image::ImageRaw, mono_font::mapping::StrGlyphMapping}};
 
 /// ![mogeefont]({png_data})
 pub const MOGEEFONT: Font<'_> = Font {{

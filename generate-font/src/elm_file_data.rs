@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use std::str::FromStr;
-use std::{fmt::Debug, path::Path};
+use std::{collections::BTreeMap, fmt::Debug, path::Path, str::FromStr};
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
 
 /// Parse Elm file to get the following data:
