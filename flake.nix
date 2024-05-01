@@ -36,11 +36,33 @@
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ ];
           cargoSha256 = "sha256-L9SK+CILDlmYwXIAESWaqnLQyZQ4oC29av1T6zE6qJo=";
         };
+
+        cargo-watch = rustPlatform.buildRustPackage rec {
+          pname = "cargo-watch";
+          version = "8.5.2";
+
+          src = pkgs.fetchCrate {
+            inherit pname version;
+            sha256 = "sha256-39KR4TzQpJ+V8odnmNIPudsKc4XvFr1I2CJx/mZhaxU=";
+          };
+          cargoSha256 = "sha256-skUG1B6TCFEXeQSRwA6vWjXmNifk5bTR4+JESw7CZMo=";
+          buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
+            pkgs.darwin.apple_sdk.frameworks.Foundation
+            pkgs.darwin.apple_sdk.frameworks.Cocoa
+          ];
+          NIX_LDFLAGS = pkgs.lib.optionals (pkgs.stdenv.isDarwin && pkgs.stdenv.isx86_64) [ "-framework" "AppKit" ];
+
+          # `test with_cargo` tries to call cargo-watch as a cargo subcommand
+          # (calling cargo-watch with command `cargo watch`)
+          preCheck = ''
+            export PATH="$(pwd)/target/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/release:$PATH"
+          '';
+        };
       in
       {
         devShell = pkgs.mkShell {
           buildInputs = [
-            pkgs.cargo-watch
+            cargo-watch
             rust-bin
             wasm-server-runner
           ];
