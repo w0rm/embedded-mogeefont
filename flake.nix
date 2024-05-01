@@ -40,6 +40,7 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = [
+            pkgs.cargo-watch
             rust-bin
             wasm-server-runner
           ];

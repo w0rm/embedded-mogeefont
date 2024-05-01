@@ -8,7 +8,7 @@ use embedded_graphics::{
     geometry::{Point, Size},
     image::Image,
     pixelcolor::{BinaryColor, PixelColor},
-    primitives::Rectangle,
+    primitives::{PrimitiveStyle, Rectangle, StyledDrawable},
     text::{
         renderer::{CharacterStyle, TextMetrics, TextRenderer},
         Baseline,
@@ -21,6 +21,9 @@ pub struct TextStyle<'a, C> {
     /// Text color.
     text_color: Option<C>,
 
+    /// Background color.
+    background_color: Option<C>,
+
     /// Font to use.
     font: &'a Font<'a>,
 }
@@ -29,6 +32,7 @@ impl<'a, C> TextStyle<'a, C> {
     pub fn new(text_color: C) -> Self {
         Self {
             text_color: Some(text_color),
+            background_color: None,
             font: &MOGEEFONT,
         }
     }
@@ -124,28 +128,44 @@ where
         D: DrawTarget<Color = Self::Color>,
     {
         let position = position - Point::new(0, self.baseline_offset(baseline));
+        let next_position = self.advance_position(text, position);
 
-        let next = match self.text_color {
-            Some(color) => {
-                self.draw_string_binary(text, position, MogeeFontDrawTarget::new(target, color))?
-            }
-            None => self.advance_position(text, position),
+        if let Some(color) = self.background_color {
+            let bg_style = PrimitiveStyle::with_fill(color);
+            Rectangle::new(
+                position,
+                Size::new(
+                    (next_position.x - position.x) as u32,
+                    self.font.em_height as u32,
+                ),
+            )
+            .draw_styled(&bg_style, target)?;
+        }
+
+        if let Some(color) = self.text_color {
+            self.draw_string_binary(text, position, MogeeFontDrawTarget::new(target, color))?;
         };
 
-        Ok(next + Point::new(0, self.baseline_offset(baseline)))
+        Ok(next_position + Point::new(0, self.baseline_offset(baseline)))
     }
 
     fn draw_whitespace<D>(
         &self,
         width: u32,
         position: Point,
-        _baseline: Baseline,
-        _target: &mut D,
+        baseline: Baseline,
+        target: &mut D,
     ) -> Result<Point, D::Error>
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        Ok(position + Point::new(width as i32, 0))
+        let position = position - Point::new(0, self.baseline_offset(baseline));
+        if let Some(color) = self.background_color {
+            let bg_style = PrimitiveStyle::with_fill(color);
+            Rectangle::new(position, Size::new(width, self.font.em_height as u32))
+                .draw_styled(&bg_style, target)?;
+        }
+        Ok(position + Point::new(width as i32, self.baseline_offset(baseline)))
     }
 
     fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
@@ -182,6 +202,7 @@ where
     fn clone(&self) -> Self {
         Self {
             text_color: self.text_color.clone(),
+            background_color: self.background_color.clone(),
             font: self.font,
         }
     }
@@ -196,6 +217,11 @@ where
     /// Sets the text color.
     fn set_text_color(&mut self, text_color: Option<Self::Color>) {
         self.text_color = text_color;
+    }
+
+    /// Sets the background color.
+    fn set_background_color(&mut self, background_color: Option<Self::Color>) {
+        self.background_color = background_color;
     }
 }
 
@@ -230,6 +256,37 @@ mod tests {
                 "#  #  ## # #  ## #     #  #    ## #   # ##  #",
                 "                 #                           ",
                 "                #                            ",
+            ])
+        );
+    }
+
+    #[test]
+    fn test_draw_string_with_background() {
+        let mut style = TextStyle::new(BinaryColor::On);
+        style.set_background_color(Some(BinaryColor::Off));
+        let mut display = MockDisplay::new();
+        display.set_allow_overdraw(true);
+        // Offset the text position by 2 because of negative left side bearing of letter 'j'
+        let result =
+            style.draw_string("just a test", Point::new(2, 0), Baseline::Top, &mut display);
+        assert_eq!(result, Ok(Point::new(41, 0)));
+
+        // Background shouldn't be drawn to the left of letter 'j',
+        // because it has a negative left side bearing
+        assert_eq!(
+            display,
+            MockDisplay::from_pattern(&[
+                "  .......................................",
+                "  #......................................",
+                "  ..........#.............#...........#..",
+                "  #.#.#..##.###....##.....###..##..##.###",
+                "  #.#.#.#...#........#....#...#.#.#...#..",
+                "  #.#.#..#..#.#....###....#.#.###..#..#.#",
+                "  #.#.#...#.#.#....#.#....#.#.#.....#.#.#",
+                "  #.###.##...##.....##.....##..##.##...##",
+                "  #......................................",
+                "  #......................................",
+                "##.......................................",
             ])
         );
     }

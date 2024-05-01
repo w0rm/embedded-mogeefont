@@ -33,3 +33,9 @@ To preview the font in the browser with the [embedded-graphics-web-simulator](ht
 ```sh
 cargo run --target wasm32-unknown-unknown -p specimen
 ```
+
+If you want it to recompile on changes, you can use `cargo-watch`:
+
+```sh
+cargo-watch -x 'run --target wasm32-unknown-unknown -p specimen'
+```
