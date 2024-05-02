@@ -23,6 +23,26 @@
           rustc = latestStableRust;
         };
 
+        rx = rustPlatform.buildRustPackage rec {
+          pname = "rx";
+          version = "0.5.2";
+
+          src = pkgs.fetchFromGitHub {
+            owner = "cloudhead";
+            repo = pname;
+            rev = "v${version}";
+            sha256 = "sha256-LTpaV/fgYUgA2M6Wz5qLHnTNywh13900g+umhgLvciM=";
+          };
+          doCheck = false;
+          cargoPatches = [ ./rx/fix-glfw.patch ];
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.glfw ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+            pkgs.darwin.apple_sdk.frameworks.Cocoa
+          ];
+
+          cargoHash = "sha256-gRZ9DP6ikzun7JPOnyAl6hrlx82xHC/f2EyBdoD3XwI=";
+        };
+
         wasm-server-runner = rustPlatform.buildRustPackage rec {
           pname = "wasm-server-runner";
           version = "0.6.3";
@@ -32,8 +52,6 @@
             sha256 = "sha256-4NuvNvUHZ7n0QP42J9tuf1wqBe9f/R6iJAGeuno9qtg=";
           };
           nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ ];
           cargoSha256 = "sha256-L9SK+CILDlmYwXIAESWaqnLQyZQ4oC29av1T6zE6qJo=";
         };
 
@@ -62,6 +80,8 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = [
+            rx
+            pkgs.imagemagick
             cargo-watch
             rust-bin
             wasm-server-runner

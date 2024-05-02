@@ -32,8 +32,8 @@ pub fn main_js() -> Result<(), JsValue> {
     let textbox_style = TextBoxStyleBuilder::new().build();
     let padding = 2;
     let text_bounds = Rectangle::new(
-        Point::new(padding, padding),
-        Size::new(width - padding as u32 * 2, height - padding as u32 * 2),
+        Point::new(padding as i32, padding as i32),
+        Size::new(width - padding * 2, height - padding * 2),
     );
 
     // Create the text box and apply styling options.

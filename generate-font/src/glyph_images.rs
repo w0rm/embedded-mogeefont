@@ -75,6 +75,11 @@ impl TryFrom<&Path> for GlyphImages {
                 panic!("Image dimensions higher than 16: {:?}", path);
             }
 
+            // Catch images that are not 11 pixels high
+            if img.height() != 11 {
+                println!("Image dimensions not equal to 11: {:?}", path);
+            }
+
             let code_points: Vec<char> = path
                 .file_stem()
                 .unwrap_or_default()

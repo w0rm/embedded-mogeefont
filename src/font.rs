@@ -1,7 +1,7 @@
 use crate::{kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings};
 use embedded_graphics::{
     geometry::{Point, Size},
-    image::{ImageDrawableExt, ImageRaw, SubImage},
+    image::ImageRaw,
     mono_font::mapping::{GlyphMapping, StrGlyphMapping},
     pixelcolor::BinaryColor,
     primitives::Rectangle,
@@ -22,7 +22,9 @@ pub struct Font<'a> {
 pub struct GlyphIndex(pub(crate) usize);
 
 impl<'a> Font<'a> {
-    pub fn char_offsets<'t>(&'a self, text: &'t str) -> impl Iterator<Item = GlyphIndex> + 't
+    /// Returns an iterator over the glyph indices for the characters in a text.
+    /// Performs ligature substitution.
+    pub fn glyph_indices<'t>(&'a self, text: &'t str) -> impl Iterator<Item = GlyphIndex> + 't
     where
         'a: 't,
     {
@@ -54,35 +56,34 @@ impl<'a> Font<'a> {
     }
 
     /// Returns the glyph index for a character.
-    fn glyph_index(&self, glyph: char) -> GlyphIndex {
-        GlyphIndex(self.glyph_mapping.index(glyph))
+    fn glyph_index(&self, char: char) -> GlyphIndex {
+        GlyphIndex(self.glyph_mapping.index(char))
     }
 
     /// Returns the area of a glyph in the font image.
-    fn glyph_area(&self, index: GlyphIndex) -> Option<Rectangle> {
-        let start = index.0 * 5;
+    pub fn glyph_area(&self, glyph: GlyphIndex) -> Rectangle {
+        let start = glyph.0 * 5;
         let end = start + 3;
         if let [x, y, dimensions] = self.glyph_data[start..end] {
             let width = (dimensions & 0x0F) as u32; // Lower 4 bits
             let height = (dimensions >> 4) as u32; // Upper 4 bits
-            Some(Rectangle::new(
-                Point::new(x as i32, y as i32),
-                Size::new(width, height),
-            ))
+            Rectangle::new(Point::new(x as i32, y as i32), Size::new(width, height))
         } else {
-            None
+            Rectangle::zero()
         }
     }
 
-    pub fn letter_spacing(&self, prev_char: Option<GlyphIndex>, next_char: GlyphIndex) -> i32 {
-        match prev_char {
+    /// Returns the spacing between two glyphs, or between the start of the text and a glyph.
+    /// Takes into account the side bearings and kerning.
+    pub fn spacing(&self, prev_glyph: Option<GlyphIndex>, next_glyph: GlyphIndex) -> i32 {
+        match prev_glyph {
             Some(prev) => {
                 let right_bearing = self.side_bearings.right(prev);
-                let left_bearing = self.side_bearings.left(next_char);
-                let kerning = self.kerning(prev, next_char).unwrap_or_default();
+                let left_bearing = self.side_bearings.left(next_glyph);
+                let kerning = self.kerning(prev, next_glyph).unwrap_or_default();
                 right_bearing + kerning + left_bearing
             }
-            None => self.side_bearings.left(next_char),
+            None => self.side_bearings.left(next_glyph),
         }
     }
 
@@ -96,6 +97,11 @@ impl<'a> Font<'a> {
         })
     }
 
+    /// Returns the width of a glyph in the font image.
+    pub fn glyph_width(&self, index: GlyphIndex) -> i32 {
+        (self.glyph_data[index.0 * 5 + 2] & 0x0F) as i32
+    }
+
     /// Returns the left kerning class for a glyph.
     /// The left kerning class is stored in the upper 4 bits of the byte.
     fn left_kerning_class(&self, index: GlyphIndex) -> u8 {
@@ -107,18 +113,6 @@ impl<'a> Font<'a> {
     fn right_kerning_class(&self, index: GlyphIndex) -> u8 {
         self.glyph_data[index.0 * 5 + 4]
     }
-
-    /// Returns the width of a glyph in the font image.
-    pub fn glyph_width(&self, index: GlyphIndex) -> i32 {
-        (self.glyph_data[index.0 * 5 + 2] & 0x0F) as i32
-    }
-
-    /// Returns a subimage for a glyph.
-    pub fn glyph(&self, index: GlyphIndex) -> SubImage<'a, ImageRaw<BinaryColor>> {
-        self.glyph_area(index)
-            .map(|area| self.image.sub_image(&area))
-            .unwrap_or_else(|| self.image.sub_image(&Rectangle::zero()))
-    }
 }
 
 #[cfg(test)]
@@ -129,9 +123,9 @@ mod tests {
 
     #[test]
     fn test_glyph() {
-        let sub_image = MOGEEFONT.glyph(MOGEEFONT.glyph_index('a'));
+        let area = MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('a'));
         let mut display = MockDisplay::new();
-        sub_image.draw(&mut display).unwrap();
+        MOGEEFONT.image.draw_sub_image(&mut display, &area).unwrap();
         display.assert_pattern(&[
             "...", //
             "...", //
@@ -151,15 +145,15 @@ mod tests {
     fn test_glyph_area() {
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('a')),
-            Some(Rectangle::new(Point::new(55, 24), Size::new(3, 11)))
+            Rectangle::new(Point::new(58, 24), Size::new(3, 11))
         );
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('!')),
-            Some(Rectangle::new(Point::new(4, 0), Size::new(1, 11)))
+            Rectangle::new(Point::new(4, 0), Size::new(1, 11))
         );
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('ё')),
-            Some(Rectangle::new(Point::new(123, 60), Size::new(3, 11)))
+            Rectangle::new(Point::new(123, 60), Size::new(3, 11))
         );
         assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('熊')),
@@ -170,22 +164,22 @@ mod tests {
     #[test]
     fn test_ligature_substitution_in_text() {
         let text = "虫ffifijjjssyj";
-        let ligatures_offset = 160;
-        let mut chars = MOGEEFONT.char_offsets(text);
-        assert_eq!(chars.next(), Some(MOGEEFONT.glyph_index('虫')));
-        assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 0))); // ffi
-        assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 2))); // fi
-        assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 5))); // jj
-        assert_eq!(chars.next(), Some(MOGEEFONT.glyph_index('j')));
-        assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 6))); // ss
-        assert_eq!(chars.next(), Some(GlyphIndex(ligatures_offset + 7))); // yj
-        assert_eq!(chars.next(), None);
+        let ligatures_offset = MOGEEFONT.ligatures.offset;
+        let mut glyphs = MOGEEFONT.glyph_indices(text);
+        assert_eq!(glyphs.next(), Some(MOGEEFONT.glyph_index('虫')));
+        assert_eq!(glyphs.next(), Some(GlyphIndex(ligatures_offset + 0))); // ffi
+        assert_eq!(glyphs.next(), Some(GlyphIndex(ligatures_offset + 2))); // fi
+        assert_eq!(glyphs.next(), Some(GlyphIndex(ligatures_offset + 5))); // jj
+        assert_eq!(glyphs.next(), Some(MOGEEFONT.glyph_index('j')));
+        assert_eq!(glyphs.next(), Some(GlyphIndex(ligatures_offset + 6))); // ss
+        assert_eq!(glyphs.next(), Some(GlyphIndex(ligatures_offset + 7))); // yj
+        assert_eq!(glyphs.next(), None);
     }
 
     #[test]
     fn test_letter_spacing() {
         assert_eq!(
-            MOGEEFONT.letter_spacing(Some(MOGEEFONT.glyph_index('o')), MOGEEFONT.glyph_index(',')),
+            MOGEEFONT.spacing(Some(MOGEEFONT.glyph_index('o')), MOGEEFONT.glyph_index(',')),
             0
         );
         assert_eq!(
@@ -196,6 +190,10 @@ mod tests {
 
     #[test]
     fn test_kerning() {
+        assert_eq!(
+            MOGEEFONT.kerning(MOGEEFONT.glyph_index('s'), MOGEEFONT.glyph_index('`')),
+            Some(-1)
+        );
         assert_eq!(
             MOGEEFONT.kerning(MOGEEFONT.glyph_index('f'), MOGEEFONT.glyph_index('o')),
             Some(-1)
@@ -220,6 +218,14 @@ mod tests {
 
     #[test]
     fn test_kerning_classes() {
+        assert_eq!(
+            MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index('Y')),
+            MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index('`'))
+        );
+        assert_eq!(
+            MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index('"')),
+            MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index('\''))
+        );
         assert_eq!(MOGEEFONT.left_kerning_class(MOGEEFONT.glyph_index('o')), 16);
         assert_eq!(
             MOGEEFONT.right_kerning_class(MOGEEFONT.glyph_index(',')),

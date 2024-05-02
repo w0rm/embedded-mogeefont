@@ -1,0 +1,70 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index fd9cc7c..fbc504d 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -64,12 +64,6 @@ dependencies = [
+  "ppv-lite86",
+ ]
+ 
+-[[package]]
+-name = "cc"
+-version = "1.0.50"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "95e28fa049fda1c330bcf9d723be7663a899c4679724b34c81e9f5a326aab8cd"
+-
+ [[package]]
+ name = "cfg-if"
+ version = "0.1.10"
+@@ -95,15 +89,6 @@ dependencies = [
+  "winapi",
+ ]
+ 
+-[[package]]
+-name = "cmake"
+-version = "0.1.42"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "81fb25b677f8bf1eb325017cb6bb8452f87969db0fedb4f757b297bee78a7c62"
+-dependencies = [
+- "cc",
+-]
+-
+ [[package]]
+ name = "color_quant"
+ version = "1.0.1"
+@@ -246,7 +231,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "dbb254ad1715644ab078c94372405bf061358b97969635ef7b09cf6f9437843e"
+ dependencies = [
+  "bitflags",
+- "glfw-sys",
+  "log",
+  "objc",
+  "raw-window-handle",
+@@ -254,15 +238,6 @@ dependencies = [
+  "winapi",
+ ]
+ 
+-[[package]]
+-name = "glfw-sys"
+-version = "3.3.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "0b567b13b593ec58ea912b2658ee6230ffe20a069fa5b771800acc69bb3a157e"
+-dependencies = [
+- "cmake",
+-]
+-
+ [[package]]
+ name = "itoa"
+ version = "0.4.6"
+diff --git a/Cargo.toml b/Cargo.toml
+index b91f81a..f0fa1b3 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -16,7 +16,7 @@ pico-args = "0.3.0"
+ png = { version = "0.16.6" }
+ gif = "0.10.3"
+ chrono = "0.4.19"
+-glfw = { version = "0.41.0", optional = true }
++glfw = { version = "0.41.0", optional = true, default_features = false }
+ raw-window-handle = { version = "0.3.3", optional = true }
+ zip = { version = "0.5.5", default-features = false, features = ["deflate", "flate2"] }
+ snap = "0.2.5"

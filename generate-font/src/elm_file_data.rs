@@ -35,8 +35,8 @@ const DEFAULT_BEARINGS: &str = r#"
 (value_declaration
     functionDeclarationLeft: (function_declaration_left) @lower_case_identifier
     body: (tuple_expr
-        expr: (number_constant_expr (number_literal) @left_bearing)
-        expr: (number_constant_expr (number_literal) @right_bearing)
+        expr: (number_constant_expr) @left_bearing
+        expr: (number_constant_expr) @right_bearing
     )
     (#eq? @lower_case_identifier "defaultBearings")
 )"#;
@@ -52,7 +52,7 @@ const BEARINGS: &str = r#"
     body: (function_call_expr
         arg: (list_expr
             exprList: (tuple_expr
-                expr: (string_constant_expr (regular_string_part) @name)
+                expr: (string_constant_expr (open_quote) (_)* @name (close_quote))
                 expr: (tuple_expr
                     expr: (number_constant_expr) @left_bearing
                     expr: (number_constant_expr) @right_bearing
@@ -116,8 +116,8 @@ const KERNING_OVERRIDES: &str = r#"
         arg: (list_expr
             exprList: (tuple_expr
                 expr: (tuple_expr
-                    expr: (string_constant_expr (regular_string_part) @left_char)
-                    expr: (string_constant_expr (regular_string_part) @right_char)
+                    expr: (string_constant_expr (open_quote) (_)* @left_char (close_quote))
+                    expr: (string_constant_expr (open_quote) (_)* @right_char (close_quote))
                 )
                 expr: (number_constant_expr) @kerning
             )
@@ -129,7 +129,7 @@ const KERNING_OVERRIDES: &str = r#"
 /// ["a", "b", "c"]
 const STRING_LIST: &str = r#"
 (list_expr
-    exprList: (string_constant_expr (regular_string_part) @string)
+    exprList: (string_constant_expr (open_quote) (_)* @string (close_quote))
 )"#;
 
 impl TryFrom<&Path> for ElmFileData {

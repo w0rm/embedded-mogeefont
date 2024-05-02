@@ -1,6 +1,6 @@
 pub struct Ligatures<'a> {
     data: &'a str,
-    offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl<'a> Ligatures<'a> {

@@ -122,6 +122,40 @@ impl FontData {
             }
         }
 
+        // Split the codepoints into ASCII and non-ASCII
+        let (ascii_glyphs, non_ascii_glyphs): (Vec<u32>, Vec<u32>) =
+            glyph_code_points.iter().partition(|c| **c < 128);
+
+        println!(
+            "ASCII characters: {{ {} }}",
+            ascii_glyphs
+                .iter()
+                .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
+        // Verify that we have all the printable ASCII characters:
+        let missing_glyphs: Vec<u32> = (32..127).filter(|i| !ascii_glyphs.contains(i)).collect();
+        if !missing_glyphs.is_empty() {
+            panic!(
+                "Missing ASCII characters: {{ {} }}",
+                missing_glyphs
+                    .iter()
+                    .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+        }
+        println!(
+            "Non ASCII characters: {{ {} }}",
+            non_ascii_glyphs
+                .iter()
+                .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
         let mut left_kerning_classes: BTreeMap<String, u8> = BTreeMap::new();
         for (class, chars) in left_kerning_class {
             for c in chars {

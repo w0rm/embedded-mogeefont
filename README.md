@@ -39,3 +39,13 @@ If you want it to recompile on changes, you can use `cargo-watch`:
 ```sh
 cargo watch -x 'run --target wasm32-unknown-unknown -p specimen'
 ```
+
+# Font Design
+
+You can find the source images in the `mogeefont/font` directory. All the glyphs are named according to the Unicode code points they represent. Ligaturues are named with mulitple code points separated by underscores.
+
+The nix shell comes with [the rx pixel editor](https://rx.cloudhead.io), which can be used to edit glyph images. It only supports 8-bit RGBA PNGs, so you may need to convert the images to this format before editing them with `mogrify`:
+
+```sh
+mogrify -depth 8 -define png:color-type=6 mogeefont/font/*.png
+```
