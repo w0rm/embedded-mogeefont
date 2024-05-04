@@ -1,11 +1,28 @@
 [package]
 name = "embedded-mogeefont"
 version = "0.1.0"
+license = "MIT"
+description = "Pixel font for embedded-graphics"
+repository = "https://github.com/w0rm/embedded-mogeefont"
 authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
+keywords = ["embedded-graphics", "embedded", "text", "font"]
+categories = ["no-std", "embedded", "graphics"]
 edition = "2021"
+readme = "README.md"
 
-[package.metadata]
-# Add any custom metadata here
+exclude = [
+    ".cargo",
+    ".github/",
+    ".gitignore",
+    ".gitmodules",
+    "Cargo.lock",
+    "flake.lock",
+    "flake.nix",
+    "generate-font",
+    "mogeefont",
+    "rx",
+    "specimen",
+]
 
 [dependencies]
 embedded-graphics = "0.8.1"

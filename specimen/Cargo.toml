@@ -1,6 +1,6 @@
 [package]
 name = "specimen"
-description = "A basic example showing how to use the web simulator"
+description = "A basic example showing how to use mogeefont in the web simulator"
 version = "0.1.0"
 authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
 categories = ["wasm"]
@@ -16,4 +16,5 @@ embedded-graphics = "0.8.1"
 embedded-text = "0.7.1"
 embedded-graphics-web-simulator = "0.4.0"
 embedded-mogeefont = { path = ".." }
-wasm-bindgen = "= 0.2.91" # has to match wasm-bindgen version of wasm-server-runner
+# has to match wasm-bindgen version of wasm-server-runner
+wasm-bindgen = "= 0.2.91"
