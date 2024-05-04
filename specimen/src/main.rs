@@ -6,7 +6,6 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::{Point, WebColors},
     primitives::Rectangle,
-    text::renderer::CharacterStyle,
     Drawable,
 };
 use embedded_graphics_web_simulator::{
@@ -26,9 +25,7 @@ pub fn main_js() -> Result<(), JsValue> {
     let height = 64;
     let mut text_display = WebSimulatorDisplay::new((width, height), &output_settings, None);
 
-    let mut character_style = TextStyle::new(Rgb565::CSS_WHITE);
-    character_style.set_background_color(Some(Rgb565::CSS_RED));
-
+    let character_style = TextStyle::new(Rgb565::CSS_WHITE);
     let textbox_style = TextBoxStyleBuilder::new().build();
     let padding = 2;
     let text_bounds = Rectangle::new(

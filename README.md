@@ -1,12 +1,10 @@
+![Specimen](specimen.png)
+
 # embedded-mogeefont
 
-![MogeeFont](mogeefont.jpg)
+MogeeFont was originally created by Nadya Kuzmina for a pixel game that had to fix on a 64×64 pixel screen. You can read about [the history of MogeeFont here](https://nadyakuzmina.com/story-of-mogeefont.html). This crate brings the font to embedded systems, it should be used together with [embedded-graphics](https://github.com/embedded-graphics/embedded-graphics) and [embedded-text](https://github.com/embedded-graphics/embedded-text).
 
-Unlike many other pixel fonts, MogeeFont maximizes screen space efficiency by incorporating glyphs of variable width alongside kerning tables and ligatures.
-
-This property makes it a great fit for the [embedded_graphics](https://github.com/embedded-graphics/embedded-graphics) ecosystem!
-
-It was originally created by Nadya Kuzmina for a pixel game that had to fix on a 64x64 pixel screen. You can read about [the history of MogeeFont here](https://nadyakuzmina.com/story-of-mogeefont.html).
+![Embedded](embedded.jpg)
 
 # Developing
 
@@ -17,16 +15,6 @@ The easiest way to start hacking on the code is to [install nix](https://nixos.o
 ```sh
 nix develop
 ```
-
-To regenerate the font files for the ASCII charset from the sources:
-
-```sh
-cargo run -p generate-font -- --charset ascii
-```
-
-This command loads the pngs for glyphs, and also extracts the kerning tables from the original source code (using [tree-sitter-elm](https://github.com/elm-tooling/tree-sitter-elm) to parse the Elm module). It then assembles the sprite atlas and generates the Rust code.
-
-# Specimen
 
 To preview the font in the browser with the [embedded-graphics-web-simulator](https://github.com/rahul-thakoor/embedded-graphics-web-simulator), run:
 
@@ -39,6 +27,14 @@ If you want it to recompile on changes, you can use `cargo-watch`:
 ```sh
 cargo watch -x 'run --target wasm32-unknown-unknown -p specimen'
 ```
+
+To regenerate the font files for the ASCII charset from the sources:
+
+```sh
+cargo run -p generate-font -- --charset ascii
+```
+
+This command loads the pngs for glyphs, and also extracts the kerning tables from the original source code (using [tree-sitter-elm](https://github.com/elm-tooling/tree-sitter-elm) to parse the Elm module). It then assembles the sprite atlas and generates the Rust code.
 
 # Font Design
 
