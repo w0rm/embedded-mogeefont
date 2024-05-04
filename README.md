@@ -18,10 +18,10 @@ The easiest way to start hacking on the code is to [install nix](https://nixos.o
 nix develop
 ```
 
-To regenerate the font files from the sources:
+To regenerate the font files for the ASCII charset from the sources:
 
 ```sh
-cargo run -p generate-font
+cargo run -p generate-font -- --charset ascii
 ```
 
 This command loads the pngs for glyphs, and also extracts the kerning tables from the original source code (using [tree-sitter-elm](https://github.com/elm-tooling/tree-sitter-elm) to parse the Elm module). It then assembles the sprite atlas and generates the Rust code.

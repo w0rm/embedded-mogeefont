@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    fmt::{Display, Formatter},
+    path::Path,
+};
 
 pub struct GlyphImages {
     pub code_points_and_images: Vec<(CodePoint, image::GrayImage)>,
@@ -8,6 +11,23 @@ pub struct GlyphImages {
 pub enum CodePoint {
     Single(char),
     Ligature(String),
+}
+
+impl Display for CodePoint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CodePoint::Single(c) => write!(f, "{:0>4X}: \"{}\"", *c as u32, c),
+            CodePoint::Ligature(s) => write!(
+                f,
+                "{}: \"{}\"",
+                s.chars()
+                    .map(|c| format!("{:0>4X}", c as u32))
+                    .collect::<Vec<String>>()
+                    .join("_"),
+                s
+            ),
+        }
+    }
 }
 
 impl CodePoint {
@@ -97,6 +117,9 @@ impl TryFrom<&Path> for GlyphImages {
 
             code_points_and_images.push((code_point, img));
         }
+
+        // First glyphs, then ligatures
+        code_points_and_images.sort_by(|a, b| a.0.cmp(&b.0));
 
         Ok(GlyphImages {
             code_points_and_images,

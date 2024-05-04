@@ -152,10 +152,6 @@ mod tests {
             Rectangle::new(Point::new(4, 0), Size::new(1, 11))
         );
         assert_eq!(
-            MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('ё')),
-            Rectangle::new(Point::new(123, 60), Size::new(3, 11))
-        );
-        assert_eq!(
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('熊')),
             MOGEEFONT.glyph_area(MOGEEFONT.glyph_index('?'))
         );

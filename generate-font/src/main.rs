@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use image::{codecs::png::PngEncoder, ImageEncoder};
 use std::{collections::BTreeMap, convert::TryFrom, error::Error, io::Write, path::Path};
 mod elm_file_data;
@@ -7,6 +7,13 @@ mod glyph_images;
 use glyph_images::{CodePoint, GlyphImages};
 
 const ATLAS_WIDTH: u32 = 128;
+
+#[derive(ValueEnum, Clone, Default, Debug)]
+enum Charset {
+    #[default]
+    ASCII,
+    All,
+}
 
 // Clapp application parameters
 #[derive(Parser)]
@@ -34,13 +41,18 @@ struct GenerateFont {
     /// Default: "src/generated.rs"
     #[clap(long, default_value = "src/generated.rs")]
     rust_file: String,
+
+    /// Character subsetting
+    /// Default: "all"
+    #[clap(long, value_enum, default_value_t)]
+    charset: Charset,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = GenerateFont::parse();
     let glyph_images = GlyphImages::try_from(args.font_dir.as_ref())?;
     let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref())?;
-    let font_data = FontData::new(glyph_images, elm_file_data);
+    let font_data = FontData::new(glyph_images, elm_file_data, args.charset);
 
     font_data.save_raw(&args.raw_file)?;
     font_data.save_raw_glyph_data(&args.raw_glyph_data)?;
@@ -71,7 +83,11 @@ struct FontData {
 }
 
 impl FontData {
-    pub fn new(glyphs_images: GlyphImages, elm_file_data: ElmFileData) -> Self {
+    pub fn new(
+        glyphs_images: GlyphImages,
+        elm_file_data: ElmFileData,
+        subsetting: Charset,
+    ) -> Self {
         let GlyphImages {
             mut code_points_and_images,
         } = glyphs_images;
@@ -80,12 +96,82 @@ impl FontData {
             em_height,
             space_width,
             default_bearings,
-            bearings,
-            left_kerning_class,
-            right_kerning_class,
+            mut bearings,
+            mut left_kerning_class,
+            mut right_kerning_class,
             mut kering_pairs,
-            kerning_overrides,
+            mut kerning_overrides,
         } = elm_file_data;
+
+        let mut excluded = Vec::new();
+
+        // Filter out non-ASCII characters
+        if let Charset::ASCII = subsetting {
+            (code_points_and_images, excluded) =
+                code_points_and_images
+                    .into_iter()
+                    .partition(|(code_point, _)| match code_point {
+                        CodePoint::Single(p) => (*p as u32) < 128,
+                        CodePoint::Ligature(p) => p.chars().all(|c| (c as u32) < 128),
+                    });
+
+            bearings = bearings
+                .into_iter()
+                .filter(|(code_point, _)| code_point.chars().all(|c| (c as u32) < 128))
+                .collect();
+            left_kerning_class = left_kerning_class
+                .into_iter()
+                .map(|(c, chars)| {
+                    (
+                        c,
+                        chars
+                            .into_iter()
+                            .filter(|code_point| code_point.chars().all(|c| (c as u32) < 128))
+                            .collect(),
+                    )
+                })
+                .collect();
+            right_kerning_class = right_kerning_class
+                .into_iter()
+                .map(|(c, chars)| {
+                    (
+                        c,
+                        chars
+                            .into_iter()
+                            .filter(|code_point| code_point.chars().all(|c| (c as u32) < 128))
+                            .collect(),
+                    )
+                })
+                .collect();
+            kering_pairs.retain(|(left_cls, right_cls, _)| {
+                left_kerning_class.iter().any(|(cls, _)| cls == left_cls)
+                    && right_kerning_class.iter().any(|(cls, _)| cls == right_cls)
+            });
+
+            kerning_overrides.retain(|(left, right, _)| {
+                left.chars().all(|c| (c as u32) < 128) && right.chars().all(|c| (c as u32) < 128)
+            });
+        }
+
+        println!(
+            "Included characters: {{ {} }}",
+            code_points_and_images
+                .iter()
+                .map(|(c, _)| c)
+                .map(|c| format!("{}", c))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
+        println!(
+            "Excluded characters: {{ {} }}",
+            excluded
+                .iter()
+                .map(|(c, _)| c)
+                .map(|c| format!("{}", c))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
 
         // Ensure we can use binary search on the kerning pairs
         kering_pairs.sort_by_key(|(left, right, _)| (*left, *right));
@@ -122,39 +208,26 @@ impl FontData {
             }
         }
 
-        // Split the codepoints into ASCII and non-ASCII
-        let (ascii_glyphs, non_ascii_glyphs): (Vec<u32>, Vec<u32>) =
-            glyph_code_points.iter().partition(|c| **c < 128);
-
-        println!(
-            "ASCII characters: {{ {} }}",
-            ascii_glyphs
-                .iter()
-                .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
         // Verify that we have all the printable ASCII characters:
-        let missing_glyphs: Vec<u32> = (32..127).filter(|i| !ascii_glyphs.contains(i)).collect();
-        if !missing_glyphs.is_empty() {
-            panic!(
-                "Missing ASCII characters: {{ {} }}",
-                missing_glyphs
-                    .iter()
-                    .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+        if let Charset::ASCII = subsetting {
+            let missing_glyphs: Vec<u32> = (32..127)
+                .filter(|i| !glyph_code_points.contains(i))
+                .collect();
+            if !missing_glyphs.is_empty() {
+                panic!(
+                    "Missing ASCII characters: {{ {} }}",
+                    missing_glyphs
+                        .iter()
+                        .map(|i| format!(
+                            "{:0>4X}: \"{}\"",
+                            i,
+                            char::from_u32(*i).unwrap_or_default()
+                        ))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                );
+            }
         }
-        println!(
-            "Non ASCII characters: {{ {} }}",
-            non_ascii_glyphs
-                .iter()
-                .map(|i| format!("{:0>4X}: \"{}\"", i, char::from_u32(*i).unwrap_or_default()))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
 
         let mut left_kerning_classes: BTreeMap<String, u8> = BTreeMap::new();
         for (class, chars) in left_kerning_class {
