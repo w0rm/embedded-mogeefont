@@ -225,6 +225,7 @@ name = "embedded-mogeefont"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",
+ "embedded-text",
 ]
 
 [[package]]

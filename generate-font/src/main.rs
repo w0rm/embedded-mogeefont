@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use image::{codecs::png::PngEncoder, ImageEncoder};
-use std::{collections::BTreeMap, convert::TryFrom, error::Error, io::Write, path::Path};
+use std::{collections::BTreeMap, convert::TryFrom, error::Error, fs::File, io::Write, path::Path};
 mod elm_file_data;
 use elm_file_data::ElmFileData;
 mod glyph_images;
@@ -15,6 +15,15 @@ enum Charset {
     All,
 }
 
+impl std::fmt::Display for Charset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Charset::ASCII => write!(f, "ascii"),
+            Charset::All => write!(f, "all"),
+        }
+    }
+}
+
 // Clapp application parameters
 #[derive(Parser)]
 struct GenerateFont {
@@ -27,36 +36,48 @@ struct GenerateFont {
     #[clap(long, default_value = "mogeefont/src/MogeeFont.elm")]
     elm_file: String,
 
-    /// Path to the output raw file
-    /// Default: "src/mogeefont.raw"
-    #[clap(long, default_value = "src/mogeefont.raw")]
-    raw_file: String,
-
-    /// Path to the output raw file
-    /// Default: "src/glyph_data.raw"
-    #[clap(long, default_value = "src/glyph_data.raw")]
-    raw_glyph_data: String,
-
-    /// Path to the output rust file
-    /// Default: "src/generated.rs"
-    #[clap(long, default_value = "src/generated.rs")]
-    rust_file: String,
+    /// Path to the output directory
+    /// Default: "src"
+    #[clap(long, default_value = "src")]
+    out_dir: String,
 
     /// Character subsetting
-    /// Default: "all"
-    #[clap(long, value_enum, default_value_t)]
-    charset: Charset,
+    /// Default: "ascii"
+    #[clap(long, value_enum, default_value = "ascii")]
+    charset: Vec<Charset>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = GenerateFont::parse();
     let glyph_images = GlyphImages::try_from(args.font_dir.as_ref())?;
     let elm_file_data = ElmFileData::try_from(args.elm_file.as_ref())?;
-    let font_data = FontData::new(glyph_images, elm_file_data, args.charset);
+    let mut rust_file = std::fs::File::create(&Path::new(&args.out_dir).join("generated.rs"))?;
 
-    font_data.save_raw(&args.raw_file)?;
-    font_data.save_raw_glyph_data(&args.raw_glyph_data)?;
-    font_data.save_rust(&args.rust_file, &args.raw_file, &args.raw_glyph_data)?;
+    write!(
+        &mut rust_file,
+        r#"use crate::{{
+    charset::Charset, kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings
+}};
+use embedded_graphics::{{image::ImageRaw, mono_font::mapping::StrGlyphMapping}};
+"#
+    )?;
+
+    let fonts: Vec<_> = args
+        .charset
+        .into_iter()
+        .map(|charset| FontData::new(&glyph_images, &elm_file_data, charset))
+        .collect();
+
+    for font in fonts.iter() {
+        font.write(
+            &mut rust_file,
+            &Path::new(&args.out_dir).join("lib.rs"),
+            &Path::new(&args.out_dir).join(format!("{}_font.raw", font.charset)),
+            &Path::new(&args.out_dir).join(format!("{}_glyph_data.raw", font.charset)),
+        )?;
+    }
+
+    update_specimen(&Path::new(&args.out_dir).join("lib.rs"), &fonts)?;
 
     Ok(())
 }
@@ -71,11 +92,12 @@ struct Glyph {
 }
 
 struct FontData {
+    charset: Charset,
     glyph_code_points: Vec<u32>,
     ligature_code_points: Vec<Vec<u32>>,
     glyphs: Vec<Glyph>,
     atlas_height: u32,
-    em_height: u32,
+    line_height: u32,
     glyph_bearings: Vec<(u32, i8, i8)>,
     default_bearings: (i8, i8),
     kerning_overrides: Vec<(u32, u32, i8)>,
@@ -83,17 +105,13 @@ struct FontData {
 }
 
 impl FontData {
-    pub fn new(
-        glyphs_images: GlyphImages,
-        elm_file_data: ElmFileData,
-        subsetting: Charset,
-    ) -> Self {
+    pub fn new(glyphs_images: &GlyphImages, elm_file_data: &ElmFileData, charset: Charset) -> Self {
         let GlyphImages {
             mut code_points_and_images,
-        } = glyphs_images;
+        } = glyphs_images.clone();
 
         let ElmFileData {
-            em_height,
+            line_height,
             space_width,
             default_bearings,
             mut bearings,
@@ -101,12 +119,12 @@ impl FontData {
             mut right_kerning_class,
             mut kering_pairs,
             mut kerning_overrides,
-        } = elm_file_data;
+        } = elm_file_data.clone();
 
         let mut excluded = Vec::new();
 
         // Filter out non-ASCII characters
-        if let Charset::ASCII = subsetting {
+        if let Charset::ASCII = charset {
             (code_points_and_images, excluded) =
                 code_points_and_images
                     .into_iter()
@@ -179,7 +197,7 @@ impl FontData {
         // Add a space glyph
         code_points_and_images.push((
             CodePoint::Single(' '),
-            image::GrayImage::from_pixel(space_width, em_height, image::Luma::from([255])),
+            image::GrayImage::from_pixel(space_width, line_height, image::Luma::from([255])),
         ));
 
         // First glyphs, then ligatures
@@ -209,7 +227,7 @@ impl FontData {
         }
 
         // Verify that we have all the printable ASCII characters:
-        if let Charset::ASCII = subsetting {
+        if let Charset::ASCII = charset {
             let missing_glyphs: Vec<u32> = (32..127)
                 .filter(|i| !glyph_code_points.contains(i))
                 .collect();
@@ -265,7 +283,7 @@ impl FontData {
             let width = img.width();
             if left + width > ATLAS_WIDTH {
                 left = 0;
-                top += em_height + spacing;
+                top += line_height + spacing;
             }
             glyphs.push(Glyph {
                 left,
@@ -280,14 +298,15 @@ impl FontData {
             });
             left += width + spacing;
         }
-        let atlas_height = top + em_height;
+        let atlas_height = top + line_height;
 
         Self {
+            charset,
             glyphs,
             glyph_code_points,
             ligature_code_points,
             atlas_height,
-            em_height,
+            line_height,
             glyph_bearings,
             default_bearings,
             kerning_overrides,
@@ -321,7 +340,7 @@ impl FontData {
             .collect())
     }
 
-    fn png_data(&self, scale: u32) -> Result<String, Box<dyn Error>> {
+    pub fn png_data(&self, scale: u32) -> Result<String, Box<dyn Error>> {
         let mut png = Vec::new();
         let bitmap_data = self.bitmap_data()?;
         let image =
@@ -424,12 +443,12 @@ impl FontData {
         st
     }
 
-    pub fn save_raw<P: AsRef<Path>>(&self, raw_file: &P) -> Result<(), Box<dyn Error>> {
+    fn save_raw_font<P: AsRef<Path>>(&self, raw_file: &P) -> Result<(), Box<dyn Error>> {
         std::fs::write(raw_file, &self.bitmap_data()?)?;
         Ok(())
     }
 
-    pub fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
+    fn save_raw_glyph_data<P: AsRef<Path>>(&self, raw_file: &P) -> std::io::Result<()> {
         let mut glyph_data = Vec::new();
         for glyph in self.glyphs.iter() {
             // concat width and height into a single u8
@@ -445,12 +464,16 @@ impl FontData {
         std::fs::write(raw_file, &glyph_data)
     }
 
-    pub fn save_rust<P: AsRef<Path>>(
+    pub fn write<P: AsRef<Path>>(
         &self,
+        file: &mut File,
         rust_file: &P,
         raw_file: &P,
         raw_glyphs_file: &P,
     ) -> Result<(), Box<dyn Error>> {
+        self.save_raw_font(raw_file)?;
+        self.save_raw_glyph_data(raw_glyphs_file)?;
+
         let relative_raw_path = raw_file
             .as_ref()
             .strip_prefix(rust_file.as_ref().parent().unwrap())?
@@ -469,9 +492,7 @@ impl FontData {
 
         let png_data = self.png_data(2)?;
 
-        let mut file = std::fs::File::create(rust_file)?;
-
-        let em_height = self.em_height;
+        let line_height = self.line_height;
         let side_bearings = self.side_bearings();
         let default_bearings =
             format!("({}, {})", self.default_bearings.0, self.default_bearings.1);
@@ -479,14 +500,16 @@ impl FontData {
         let kerning_pairs = self.kerning_pairs();
         let kerning_overrides = self.kerning_overrides();
 
+        let charset_upper = format!("{}", self.charset).to_uppercase();
+
         writeln!(
             file,
-            r#"use crate::{{font::Font, kerning::Kerning, ligatures::Ligatures, side_bearings::SideBearings}};
-use embedded_graphics::{{image::ImageRaw, mono_font::mapping::StrGlyphMapping}};
-
-/// ![mogeefont]({png_data})
-pub const MOGEEFONT: Font<'_> = Font {{
-    image: ImageRaw::new(include_bytes!("{relative_raw_path}"), 128),
+            r#"
+/// {charset_upper} charset
+///
+/// ![specimen]({png_data})
+pub const {charset_upper}: Charset = Charset {{
+    image: ImageRaw::new(include_bytes!("{relative_raw_path}"), {ATLAS_WIDTH}),
     glyph_mapping: StrGlyphMapping::new(
         "{glyph_mapping}",
         {substitute_index},
@@ -504,11 +527,41 @@ pub const MOGEEFONT: Font<'_> = Font {{
         "{ligature_code_points}",
         {ligature_offset},
     ),
-    em_height: {em_height},
+    line_height: {line_height},
     baseline: 8,
 }};"#,
         )?;
 
         Ok(())
     }
+}
+
+fn update_specimen<P: AsRef<Path>>(file: &P, fonts: &[FontData]) -> Result<(), Box<dyn Error>> {
+    let input = std::fs::read_to_string(file)?;
+    let mut output = Vec::new();
+    let mut take = true;
+    for line in input.lines() {
+        if take {
+            output.push(line.to_string());
+        }
+        if line.trim() == "//START-SPECIMEN" {
+            take = false;
+            output.push("//! | Charset | Specimen, upscaled to 2x |".to_string());
+            output.push("//! |---------|----------|".to_string());
+            for font in fonts {
+                output.push(format!(
+                    "//! | `{charset}` | ![{charset}]({png_data}) |",
+                    charset = font.charset.to_string().to_uppercase(),
+                    png_data = font.png_data(2)?,
+                ));
+            }
+        }
+        if line.trim() == "//END-SPECIMEN" {
+            output.push(line.to_string());
+            take = true;
+        }
+    }
+    output.push(String::new());
+    std::fs::write(file, output.join("\n"))?;
+    Ok(())
 }

@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ligatures<'a> {
     data: &'a str,
     pub(crate) offset: usize,

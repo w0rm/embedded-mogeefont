@@ -1,5 +1,6 @@
-use crate::font::GlyphIndex;
+use crate::charset::GlyphIndex;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Kerning<'a> {
     pairs: &'a [(u8, u8, i32)],
     overrides: &'a [(usize, usize, i32)],

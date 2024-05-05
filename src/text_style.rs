@@ -1,4 +1,4 @@
-use crate::{draw_target::MogeeFontDrawTarget, font::Font, generated::MOGEEFONT};
+use crate::{charset::Charset, draw_target::MogeeFontDrawTarget, generated::ASCII};
 use embedded_graphics::{
     draw_target::{DrawTarget, DrawTargetExt},
     geometry::{Point, Size},
@@ -7,31 +7,37 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle, StyledDrawable},
     text::{
         renderer::{CharacterStyle, TextMetrics, TextRenderer},
-        Baseline,
+        Baseline, DecorationColor,
     },
 };
 
-#[derive(Copy)]
-pub struct TextStyle<'a, C> {
+/// Style properties for text using MogeeFont.
+///
+/// To create a `TextStyle` with a given text color, use the [`TextStyle::new`] method.
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct TextStyle<C> {
     /// Text color.
     text_color: Option<C>,
 
     /// Background color.
     background_color: Option<C>,
 
-    /// Font to use.
-    font: &'a Font<'a>,
+    /// Charset to use.
+    charset: &'static Charset,
 }
 
-impl<'a, C> TextStyle<'a, C> {
+impl<C> TextStyle<C> {
+    /// Creates a new text style with the given text color and the default ASCII charset.
     pub fn new(text_color: C) -> Self {
         Self {
             text_color: Some(text_color),
             background_color: None,
-            font: &MOGEEFONT,
+            charset: &ASCII,
         }
     }
 
+    /// Draws the text using the binary color format.
     fn draw_string_binary<D>(
         &self,
         text: &str,
@@ -44,10 +50,10 @@ impl<'a, C> TextStyle<'a, C> {
         let mut pos = position;
         let mut prev_glyph = None;
 
-        for glyph in self.font.glyph_indices(text) {
-            pos.x += self.font.spacing(prev_glyph, glyph);
-            let area = self.font.glyph_area(glyph);
-            self.font
+        for glyph in self.charset.glyph_indices(text) {
+            pos.x += self.charset.spacing(prev_glyph, glyph);
+            let area = self.charset.glyph_area(glyph);
+            self.charset
                 .image
                 .draw_sub_image(&mut target.translated(pos), &area)?;
             pos.x += area.size.width as i32;
@@ -61,9 +67,9 @@ impl<'a, C> TextStyle<'a, C> {
     fn advance_position(&self, text: &str, x: i32) -> i32 {
         let mut x = x;
         let mut prev_glyph = None;
-        for glyph in self.font.glyph_indices(text) {
-            x += self.font.spacing(prev_glyph, glyph);
-            x += self.font.glyph_width(glyph);
+        for glyph in self.charset.glyph_indices(text) {
+            x += self.charset.spacing(prev_glyph, glyph);
+            x += self.charset.glyph_width(glyph);
             prev_glyph = Some(glyph);
         }
         return x;
@@ -73,14 +79,14 @@ impl<'a, C> TextStyle<'a, C> {
     fn baseline_offset(&self, baseline: Baseline) -> i32 {
         match baseline {
             Baseline::Top => 0,
-            Baseline::Bottom => (self.font.em_height - 1) as i32,
-            Baseline::Middle => ((self.font.em_height - 1) / 2) as i32,
-            Baseline::Alphabetic => self.font.baseline as i32,
+            Baseline::Bottom => (self.charset.line_height - 1) as i32,
+            Baseline::Middle => ((self.charset.line_height - 1) / 2) as i32,
+            Baseline::Alphabetic => self.charset.baseline as i32,
         }
     }
 }
 
-impl<'a, C> TextRenderer for TextStyle<'a, C>
+impl<C> TextRenderer for TextStyle<C>
 where
     C: PixelColor,
 {
@@ -108,7 +114,7 @@ where
             let bg_style = PrimitiveStyle::with_fill(color);
             Rectangle::new(
                 position,
-                Size::new(bg_width as u32, self.font.em_height as u32),
+                Size::new(bg_width as u32, self.charset.line_height),
             )
             .draw_styled(&bg_style, target)?;
             offset = Some(bg_width);
@@ -123,7 +129,7 @@ where
 
         Ok(position
             + Point::new(
-                offset.unwrap_or_else(|| self.advance_position(text, 0) as i32),
+                offset.unwrap_or_else(|| self.advance_position(text, 0)),
                 self.baseline_offset(baseline),
             ))
     }
@@ -141,7 +147,7 @@ where
         let position = position - Point::new(0, self.baseline_offset(baseline));
         if let Some(color) = self.background_color {
             let bg_style = PrimitiveStyle::with_fill(color);
-            Rectangle::new(position, Size::new(width, self.font.em_height as u32))
+            Rectangle::new(position, Size::new(width, self.charset.line_height))
                 .draw_styled(&bg_style, target)?;
         }
         Ok(position + Point::new(width as i32, self.baseline_offset(baseline)))
@@ -152,15 +158,15 @@ where
         // when the first character has a negative left side bearing,
         // e.g. letter 'j'.
         let bb_left = self
-            .font
+            .charset
             .glyph_indices(text)
             .next()
-            .map(|c| self.font.spacing(None, c))
+            .map(|c| self.charset.spacing(None, c))
             .unwrap_or_default();
 
         let bb_position = position + Point::new(bb_left, -self.baseline_offset(baseline));
         let bb_width = self.advance_position(text, -bb_left);
-        let bb_size = Size::new(bb_width as u32, self.font.em_height);
+        let bb_size = Size::new(bb_width as u32, self.charset.line_height);
 
         TextMetrics {
             bounding_box: Rectangle::new(bb_position, bb_size),
@@ -169,24 +175,11 @@ where
     }
 
     fn line_height(&self) -> u32 {
-        self.font.em_height
+        self.charset.line_height
     }
 }
 
-impl<'a, C> Clone for TextStyle<'a, C>
-where
-    C: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            text_color: self.text_color.clone(),
-            background_color: self.background_color.clone(),
-            font: self.font,
-        }
-    }
-}
-
-impl<'a, C> CharacterStyle for TextStyle<'a, C>
+impl<C> CharacterStyle for TextStyle<C>
 where
     C: PixelColor,
 {
@@ -201,6 +194,12 @@ where
     fn set_background_color(&mut self, background_color: Option<Self::Color>) {
         self.background_color = background_color;
     }
+
+    /// Underline is not supported.
+    fn set_underline_color(&mut self, _underline_color: DecorationColor<Self::Color>) {}
+
+    /// Strikethrough is not supported.
+    fn set_strikethrough_color(&mut self, _strikethrough_color: DecorationColor<Self::Color>) {}
 }
 
 #[cfg(test)]

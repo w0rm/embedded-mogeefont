@@ -3,16 +3,16 @@
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::Size,
-    pixelcolor::Rgb565,
-    prelude::{Point, WebColors},
+    pixelcolor::{Rgb565, WebColors},
+    prelude::Point,
     primitives::Rectangle,
     Drawable,
 };
 use embedded_graphics_web_simulator::{
     display::WebSimulatorDisplay, output_settings::OutputSettingsBuilder,
 };
-use embedded_mogeefont::TextStyle;
-use embedded_text::{style::TextBoxStyleBuilder, TextBox};
+use embedded_mogeefont::MogeeTextStyle;
+use embedded_text::{style::TextBoxStyle, TextBox};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -25,8 +25,8 @@ pub fn main_js() -> Result<(), JsValue> {
     let height = 64;
     let mut text_display = WebSimulatorDisplay::new((width, height), &output_settings, None);
 
-    let character_style = TextStyle::new(Rgb565::CSS_WHITE);
-    let textbox_style = TextBoxStyleBuilder::new().build();
+    let character_style = MogeeTextStyle::new(Rgb565::CSS_WHITE);
+    let textbox_style = TextBoxStyle::default();
     let padding = 2;
     let text_bounds = Rectangle::new(
         Point::new(padding as i32, padding as i32),

@@ -5,7 +5,7 @@ license = "MIT"
 description = "Pixel font for embedded-graphics"
 repository = "https://github.com/w0rm/embedded-mogeefont"
 authors = ["Andrey Kuzmin <hi@unsoundscapes.com>"]
-keywords = ["embedded-graphics", "embedded", "text", "font"]
+keywords = ["embedded-graphics", "embedded", "no-std", "text", "font"]
 categories = ["no-std", "embedded", "graphics"]
 edition = "2021"
 readme = "README.md"
@@ -26,6 +26,10 @@ exclude = [
 
 [dependencies]
 embedded-graphics = "0.8.1"
+
+[dev-dependencies]
+embedded-text = "0.7.1"
+
 
 [workspace]
 members = ["specimen", "generate-font"]

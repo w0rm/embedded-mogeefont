@@ -1,5 +1,6 @@
-use crate::font::GlyphIndex;
+use crate::charset::GlyphIndex;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SideBearings<'a> {
     bearings: &'a [(u32, i32, i32)],
     default_bearings: (i32, i32),

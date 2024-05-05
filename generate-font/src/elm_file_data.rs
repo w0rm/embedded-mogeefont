@@ -9,8 +9,9 @@ use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor};
 /// - rightKerningClass (Dict.fromList)
 /// - kerningPairs (Dict.fromList)
 /// - kerningOverrides (Dict.fromList)
+#[derive(Clone)]
 pub struct ElmFileData {
-    pub em_height: u32,
+    pub line_height: u32,
     pub space_width: u32,
     pub default_bearings: (i8, i8),
     pub bearings: BTreeMap<String, (i8, i8)>,
@@ -150,12 +151,12 @@ impl TryFrom<&Path> for ElmFileData {
         // emHeight and spaceWidth
         let query = Query::new(language, NUMBER_CONSTANT).expect("Failed to create query");
         let matches = cursor.matches(&query, root_node, elm_code);
-        let mut em_height = 0;
+        let mut line_height = 0;
         let mut space_width = 0;
         for m in matches {
             let value = m.captures[1].parse(elm_code);
             match m.captures[0].node.utf8_text(elm_code) {
-                Ok("emHeight") => em_height = value,
+                Ok("emHeight") => line_height = value,
                 Ok("spaceWidth") => space_width = value,
                 _ => {}
             }
@@ -223,7 +224,7 @@ impl TryFrom<&Path> for ElmFileData {
             .collect();
 
         Ok(ElmFileData {
-            em_height,
+            line_height,
             space_width,
             default_bearings: (left_default_bearing, right_default_bearing),
             bearings,

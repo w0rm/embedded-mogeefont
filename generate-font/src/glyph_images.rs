@@ -3,11 +3,12 @@ use std::{
     path::Path,
 };
 
+#[derive(Clone)]
 pub struct GlyphImages {
     pub code_points_and_images: Vec<(CodePoint, image::GrayImage)>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CodePoint {
     Single(char),
     Ligature(String),

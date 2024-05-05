@@ -1,10 +1,51 @@
-![Specimen](specimen.png)
-
 # embedded-mogeefont
 
-MogeeFont was originally created by Nadya Kuzmina for a pixel game that had to fix on a 64×64 pixel screen. You can read about [the history of MogeeFont here](https://nadyakuzmina.com/story-of-mogeefont.html). This crate brings the font to embedded systems, it should be used together with [embedded-graphics](https://github.com/embedded-graphics/embedded-graphics) and [embedded-text](https://github.com/embedded-graphics/embedded-text).
+![Unlike many other pixel fonts, MogeeFont maximizes screen space efficiency by incorporating glyphs of variable width alongside kerning tables and ligatures.](mogeefont.png)
+
+MogeeFont was originally created by Nadya Kuzmina for a pixel game that had to fit on a 64×64 pixel screen. You can read about [the history of MogeeFont here](https://nadyakuzmina.com/story-of-mogeefont.html). This crate brings the font to embedded systems, it should be used together with [embedded-graphics](https://github.com/embedded-graphics/embedded-graphics) and [embedded-text](https://github.com/embedded-graphics/embedded-text).
 
 ![Embedded](embedded.jpg)
+
+# Usage
+
+```rust
+use embedded_text::{style::TextBoxStyle, TextBox};
+use embedded_mogeefont::MogeeTextStyle;
+use embedded_graphics::{
+  geometry::{Size, Point},
+  mock_display::MockDisplay,
+  pixelcolor::BinaryColor,
+  primitives::Rectangle,
+  Drawable,
+};
+
+let mut display = MockDisplay::new();
+let character_style = MogeeTextStyle::new(BinaryColor::On);
+let textbox_style = TextBoxStyle::default();
+let textbox_bounds = Rectangle::new(Point::zero(), Size::new(42, 22));
+let textbox = TextBox::with_textbox_style(
+   "Hello, world!",
+   textbox_bounds,
+   character_style,
+   textbox_style,
+);
+textbox.draw(&mut display).unwrap();
+assert_eq!(
+  display,
+  MockDisplay::from_pattern(&[
+    "                                          ",
+    "#  #     # #                       #   # #",
+    "#  #     # #                       #   # #",
+    "#  #  ## # # ##      # # # ##  ##  #  ## #",
+    "#### # # # # # #     # # # # # # # # # # #",
+    "#  # ### # # # #     # # # # # # # # # # #",
+    "#  # #   # # # #     # # # # # #   # # #  ",
+    "#  #  ## # #  ## #   ## #   ## #   # ##  #",
+    "                 #                        ",
+    "                #                         ",
+  ]),
+);
+```
 
 # Developing
 
